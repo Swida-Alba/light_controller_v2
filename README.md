@@ -362,3 +362,5 @@ double fx(unsigned long ti, unsigned long td) // ti is the elapsed time in secti
 
 ## Appendices
 
+![Circuits diagram](LD_controller_circuits.png)
+Figure 1 - Circuits diagram of the light controller. 
