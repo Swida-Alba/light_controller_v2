@@ -15,9 +15,9 @@ The system controller is built using Arduino Uno and the Arduino programming lan
 
 The most important parameter is the `LD[3][sectN]` array, which defines your protocol.
 
-The `LD[3][sectN]` is a `3` $\times$ `sectN` (3 rows, sectN columns) 2-D array, where the `sectN` represents the number of sections. Each cycle of LD or DD is separated into 2 individual sections. Each column represents the duration and all states in a section. The first row represents the duration of sections (in ms). The second row represents the state of SIGNAL I, such as white LEDs (1 for LED on, 0 for LED off), The third row represents the state of SIGNAL II, such as a motor, 1 for ON, 0 for OFF. The rows are indexed as [0, 1, 2] and sections as [0, 1, …, sectN-1], for C/C++ counting from 0. 
+The `LD[3][sectN]` is a `3` $\times$ `sectN` (`3` rows, `sectN` columns) 2-D array, where the `sectN` represents the number of sections. Each cycle of LD or DD is separated into 2 individual sections. Each column represents the duration and all states in a section. The first row represents the duration of sections (in ms). The second row represents the state of SIGNAL I, such as white LEDs (1 for LED ON, 0 for LED OFF), The third row represents the state of SIGNAL II, such as a motor, 1 for ON, 0 for OFF. The rows are indexed as [0, 1, 2] and sections as [0, 1, …, sectN-1], for C/C++ counting from 0. 
 
-Usually, to make flies acclimated to the incubator environment, our protocols start with a `D` section, and to exclude extra light influences, we prepare flies and mount the whole setup during the L section, that is, our valid data collecting start from `LD 1`, and during the `L` section of `LD 0` (`LD[][0]`), we load flies in and assemble the setup as required, with the `D` section of `LD 0`  (`LD[][1]`) left for acclimation. Thus, the value of `LD[0][0]`, the duration of the first `L`, should be specified as the remaining time to the start of the `D` of `LD 0`. Similarly, the values of `LD[0][2]` and `LD[0][3]` are the durations for the `L` and `D` of `LD 1`; `LD[0][4]` and `LD[0][5]` for `LD 2`; …; `LD[0][2n]` and `LD[0][2n+1]` for `LD n`. 
+Usually, to make flies acclimated to the incubator environment, our protocols start with a `D` section, and to exclude extra light influences, we prepare flies and mount the whole setup during the L section, that is, our valid data collecting starts from `LD 1` after an `LD 0`. And during the `L` section of `LD 0` (`LD[][0]`), we load flies in and assemble the setup as required, with the `D` section of `LD 0`  (`LD[][1]`) left for acclimation. Thus, the value of `LD[0][0]`, the duration of the first `L`, should be specified as the remaining time to the start of the `D` of `LD 0`. Similarly, the values of `LD[0][2]` and `LD[0][3]` are the durations for the `L` and `D` of `LD 1`; `LD[0][4]` and `LD[0][5]` for `LD 2`; …; `LD[0][2n]` and `LD[0][2n+1]` for `LD n`. 
 
 To illustrate the structure of the `LD[3][sectN]` array, here is an example of a 10-section protocol:
 
@@ -27,9 +27,9 @@ To illustrate the structure of the `LD[3][sectN]` array, here is an example of a
 | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        |
 | 0        | 0        | 0        | 0        | 0        | 0        | 1        | 0        | 1        | 0        |
 
-In the above table, the first row represents the duration of each section in milliseconds. The second row represents the state of SIGNAL I, and the third row represents the state of SIGNAL II. The protocol has 10 sections, and each section lasts for 12 hours (43200000 ms). The protocol starts with a 12-hour `L` section, followed by a 12-hour `D` section, and then a 12-hour `L` section, and so on. The state of SIGNAL I alternates between 1 and 0, while the state of SIGNAL II remains 0 except for sections 6 and 8, that is , the SIGNAL II starts its ON/OFF cycle from `LD 3`.
+In the above table, the first row represents the duration of each section in milliseconds. The second row represents the state of SIGNAL I, and the third row represents the state of SIGNAL II. The protocol has 10 sections, and each section lasts for 12 hours (43200000 ms). The protocol starts with a 12-hour `L` section, followed by a 12-hour `D` section, and then a 12-hour `L` section, and so on. The state of SIGNAL I alternates between 1 and 0, while the state of SIGNAL II remains 0 except for sections 6 and 8, that is , the SIGNAL II starts its ON/OFF cycle from `LD 3`. The `sect 0` is the `D` of `LD 0`, and the `sect 1` is the `L` of `LD 1`, and so on.
 
-Accordingly, constant dark (DD) of SIGNAL I after $x$ complete LD cycles (note that LD 0 is an incomplete LD cycle) should be programmed by setting "LD[1][2$x$ + 2 : sectN]" to 0, so the constant dark will start from the day ($x$ + 1). Similarly, constant ON of SIGNAL II should be coded by setting "LD[2][2$m$ : 2$k$ + 1]" to 1, where SIGNAL II will be constant ON during day $m$ to day $k$.
+Accordingly, constant dark (DD) of SIGNAL I after $x$ complete LD cycles (note that LD 0 is an incomplete LD cycle) should be programmed by setting `LD[1][2x + 2 : sectN]` to 0, so the constant dark will start from the day ($x$ + 1). Similarly, constant ON of SIGNAL II should be coded by setting `LD[2][2m : 2k + 1]` to 1, where SIGNAL II will be constant ON during day $m$ to day $k$.
 
 Usually, we regard two continuous sections as a so called "day", but sometimes it's necessary to shorten or extend the duration of a day, for example, to shift the day-night cycle or to make SIGNAL I and SIGNAL II have overlapping stages or different periods. For short, a single `section` is a specific time period with given states of SIGNAL I and SIGNAL II.
 
@@ -76,14 +76,14 @@ the `pin[n]`, `pin_on`, `pin_on_rev` are controlled by SIGNAL I, and the `pin_mo
 
 When __SIGNAL I__ is ON, all pins in `pin[n]` will blink with the frequencies defined in `f[n]`, and `pin_on` will be ON and `pin_on_rev` will be OFF. When SIGNAL I is OFF, all pins in `pin[n]` and `pin_on` will be OFF, but `pin_on_rev` will be ON.
 
-For `pin[n]`, the `PW[n]` is used to set the pulse widths (PW) of the blinking signals. If `PW[n]` is set to 0, the PW will be calculated by the duty cycle defined in `dutyCycle[n]`. The `PW[n]` takes precedence over the duty cycle. The `interval[n]` will be calculated automatically, so please left it as 0.
+For `pin[n]`, the `PW[n]` is used to set the pulse widths (PW) of the blinking signals. If `PW[n]` is set to 0, the PW will be calculated by the duty cycle defined in `dutyCycle[n]`. The `PW[n]` takes precedence over the `dutyCycle[n]`. The `interval[n]` will be calculated automatically, so please left it as 0.
 
 When __SIGNAL II__ is ON, `pin_motor[0]` will be ON and `pin_motor[1]` will be OFF, vice versa.
 
 Usually, SIGNAL I is enough for most experiments with LD cycles and than free run in DD cycles. 
 
 ## Shifts
-The `dayShift[shiftN]` is used to easily shift the LD cycles, __where `shiftN` is the times of LD cycles to shift__. The `shiftTime[shiftN]` is the time to shift. These two variables should be set in pairs.
+The `dayShift[shiftN]` is used to easily shift the LD cycles, __where `shiftN` is the times of LD cycles to shift__. The `shiftTime[shiftN]` is the time to shift. These two variables should be set in pairs. The corresponding `shiftTime` will be added to the `D` section of the day in `dayShift`, which is the `sect (2m + 1)` where $m$ is the day in `dayShift`. 
 
 for example, if you need to delay the LD 3 by 8 hours, you can set 
 
@@ -92,11 +92,11 @@ for example, if you need to delay the LD 3 by 8 hours, you can set
 shiftN = 1;
 ...
 
-dayShift[shiftN] = { 2 },
+dayShift[shiftN] = { 2 }, 
 shiftTime[shiftN] = { (8 * 60) * 60000 },
 ```
 
-If we apply this shift to the above table, it will look like
+ If we apply this shift to the above table, it will look like
 
 |sect 0    | sect 1   | sect 2   | sect 3   | sect 4   | sect 5   | sect 6   | sect 7   | sect 8   | sect 9   |
 |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
@@ -105,7 +105,7 @@ If we apply this shift to the above table, it will look like
 | 0        | 0        | 0        | 0        | 0        | 0        | 1        | 0        | 1        | 0        |
 
 
-In the above example, the shift will be applied once at the end of the second "day". the D of the LD 2 (sect 5) will be extended by 8 hours to 20 hours (72000000 ms).
+In the above example, the shift will be applied once at the end of the second "day". The `D` of the `LD 2` (`sect 5`) will be extended by 8 hours to 20 hours (72000000 ms).
 
 If you need to advance the LD 3 by 8 hours, you can simply set the `shiftN` to 1 and the `shiftTime[shiftN]` to a negative value, for example,
 
@@ -220,6 +220,8 @@ This will modify the `LD[3][sectN]` to
 | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        |
 | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        |
 
+It's applicable to change the durations of specific sections directly to achieve the desired shifts, too. The `shiftN`, `dayShift[shiftN]` and `shiftTime[shiftN]` are just used to easily and stereotypically shift the LD cycles.
+
 Usually, after some LD cycles, the experiments will be set to DD, and the `LD[3][sectN]` will be modified to DD by setting the `LD[1][2x + 2 : sectN]` to 0, where $x$ is the number of complete LD cycles or "days".
 
 e.g. if we need to set the DD after LD 3 (sect 6-7), we can set
@@ -321,6 +323,8 @@ This will modify the `LD[3][sectN]` to
 | 0        | 13020000 | 43200000 | 43200000 | 43200000 | 14400000 | 43200000 | 43200000 | 43200000 | 43200000 | ... |
 | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        | 0        | 0        | ... |
 | 1        | 0        | 1        | 0        | 1        | 0        | 1        | 0        | 0        | 0        | ... |
+
+You can always customize your protocol by modifying the `LD[3][sectN]` in the `void FillLDSections()` function, where all the durations and states of all sections can be freely assigned. 
 
 ## About time assignment
 The time assignment in the `LD[3][sectN]` is in milliseconds. so you can always write the time directly in ms, or use the `* 60000` to convert the time in minutes to ms.
