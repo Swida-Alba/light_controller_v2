@@ -2,16 +2,16 @@
 
 Kang-Rui Leng, Ph.D candidate
 
-Laboratory of Dr. Donggen Luo, College of Life Sciences, Peking University
+Laboratory of Dr. Donggen Luo, College of Life Sciences, Peking University, Beijing
 
 Email: krleng@pku.edu.cn
 
 Created: Oct 17, 2024 ---- de FE_protocol
 
-Last modified: Oct 17, 2024
+Last modified: Nov 3, 2024
 
 ## Introduction
-The system controller is built using Arduino Uno and the Arduino programming language by [Arduino](https://www.arduino.cc). If you're new to Arduino, you can start from the [Arduino Guide](https://www.arduino.cc/en/Guide). The controller script, LD_controller.ino, was designed C/C++ amateur friendly. You should only modify several input parameters of the script to program your protocol, but I strongly recommend you read the full codes.
+The system controller is built using Arduino Uno and the Arduino programming language by [Arduino](https://www.arduino.cc). If you're new to Arduino, you can start from the [Arduino Guide](https://www.arduino.cc/en/Guide). The controller script, LD_controller.ino, was designed C/C++ amateur friendly. You can simpling modify a few input parameters of the script to program your protocol.
 
 The most important parameter is the `LD[3][sectN]` array, which defines your protocol.
 
