@@ -5,17 +5,11 @@ This project uses an Arduino sketch (`light_controller_v2.ino`) and a Python pro
 
 ## Dependencies
 - Arduino IDE (or `arduino-cli`) to upload the `.ino` sketch to your board. You can download the Arduino IDE [here](https://www.arduino.cc/en/software).
-- Python 3.6+ on your machine.
-- Listed in `requirements.txt`:  
-  - `numpy`  
-  - `pandas`  
-  - `pyserial`  
-  - `openpyxl`  
-  - `tk`
+- Python 3.6+ on your machine and packages listed in the `requirements.txt` file.
 
 ## Installation
 1. Clone or download this repository.  
-2. Install the dependencies by running the `setup.py` script.  
+2. Install the dependencies by running the `setup.py` script or by installing the packages manually.
 ```bash
 python setup.py install
 ```
