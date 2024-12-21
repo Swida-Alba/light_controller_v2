@@ -68,4 +68,4 @@ The protocol file should be a ```.xlsx``` file with the following format:
   - | CALIBRATION_FACTOR |
     |--------------------|
     | 1.000116           |
-  - after run once, the program will create a `<protocol_filename>_commands_<timestamp>.txt` file in the same directory as the protocol file. In this file, you'll find the `CALIBRATION_FACTOR`. You can copy it to the protocol file `calibration` sheet to use it in the next runs.
+  - after run once, the program will create a `<protocol_filename>_commands_<timestamp>.txt` file in the same directory as the protocol file. In this file, you'll find the `CALIBRATION_FACTOR`. You can copy it to the protocol file `calibration` sheet to use it in the next runs. If not provided, the program will calibrate the time by itself, but it will take a few minutes each time you run the program.
