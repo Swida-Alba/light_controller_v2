@@ -15,9 +15,10 @@ This project uses an Arduino sketch (`light_controller_v2.ino`) and a Python pro
 
 ## Installation
 1. Clone or download this repository.  
-2. Install the dependencies:  
-   ```sh
-   pip install -r requirements.txt
+2. Install the dependencies by running the `setup.py` script.  
+```bash
+python setup.py install
+```
 
 ## Usage of the Arduino sketch
 1. Open the `light_controller_v2.ino` sketch in the Arduino IDE.
@@ -27,8 +28,11 @@ This project uses an Arduino sketch (`light_controller_v2.ino`) and a Python pro
 5. Upload the sketch to your board.
 
 ## Usage of the Python program
-1. In some cases, you can use the `create_exe.py` script to create an executable file from the Python program.
-2. after installing the dependencies, run the `protocol_parser.py` program and select a ```.xlsx``` protocol file.
+1. After installing the dependencies, run the `protocol_parser.py` program and select a ```.xlsx``` protocol file.
+2. In some cases, you can use the `create_exe.py` script to create an encapsulated `.exe` file from the Python program, so you can run it without Python installed on your other machines. Please note that the `create_exe.py` creates a `.exe` file only if you run it on a Windows machine. If you run it on an MacOS, it will create an compatitable executable file for MacOS.
+```bash
+python create_exe.py
+```
 
 ## Protocol file format
 The protocol file should be a ```.xlsx``` file with the following format:
