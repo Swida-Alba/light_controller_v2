@@ -1,7 +1,7 @@
 # Light Controller V2.0
 
 ## Overview
-This project uses an Arduino sketch (`light_controller_v2.ino`) and a Python program (`protocol_parser.py`) to control light channels according to a defined schedule. It supports serial communication, channel pattern commands, and adjustable timing through a calibration factor. The `protocol_parser.py` program reads a schedule from an Excel file and sends commands to the Arduino board to control the light channels. You can find the example Excel file as `protocol.xlsx`.
+This project uses an Arduino sketch (`light_controller_v2_arduino.ino`) and a Python program (`protocol_parser.py`) to control light channels according to a defined schedule. It supports serial communication, channel pattern commands, and adjustable timing through a calibration factor. The `protocol_parser.py` program reads a schedule from an Excel file and sends commands to the Arduino board to control the light channels. You can find the example Excel file as `protocol.xlsx`.
 
 ## Dependencies
 - Arduino IDE (or `arduino-cli`) to upload the `.ino` sketch to your board. You can download the Arduino IDE [here](https://www.arduino.cc/en/software).
@@ -15,7 +15,7 @@ python setup.py install
 ```
 
 ## Usage of the Arduino sketch
-1. Open the `light_controller_v2.ino` sketch in the Arduino IDE.
+1. Open the `light_controller_v2_arduino.ino` sketch in the Arduino IDE.
 2. Modify the `MAX_CHANNEL_NUM` and `MAX_PATTERN_NUM` constants according to your setup, as far as it does not exceed the memory of your board.
 3. Modify the `channelPins` array to match your `MAX_CHANNEL_NUM` and set the pins you are using. Defaultly, it is set to use pins 2 to 7.
 4. Select the board and port in the Arduino IDE > Tools.
