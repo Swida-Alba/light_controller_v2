@@ -1,4 +1,4 @@
-# Light Controller V2
+# Light Controller V2.0
 
 ## Overview
 This project uses an Arduino sketch (`light_controller_v2.ino`) and a Python program (`protocol_parser.py`) to control light channels according to a defined schedule. It supports serial communication, channel pattern commands, and adjustable timing through a calibration factor. The `protocol_parser.py` program reads a schedule from an Excel file and sends commands to the Arduino board to control the light channels. You can find the example Excel file as `protocol.xlsx`.
