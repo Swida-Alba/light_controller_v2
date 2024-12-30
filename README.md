@@ -46,6 +46,7 @@ The protocol file should be a ```.xlsx``` file with the following format:
   - Each row represents a section of the protocol. The first column is the section number, and the following columns are the status and time of each channel. The status is either 0 or 1, 0 for LED OFF and 1 for LED ON. The time can be a integer or a float number, and it is the time that the channel status should be kept. 
   - The time unit is set after the `CHx_time_` column name, which can be `s` (`sec`,`second`,`seconds`), `ms`(`msec`,`millisecond`,`milliseconds`), `m` (`min`,`minute`,`minutes`), `h` (`hr`,`hour`,`hours`). The time unit can not be omitted.
   - The channel number should be continuous from 1 and should not exceed the `MAX_CHANNEL_NUM` defined in the Arduino sketch.
+  - The `Sections` column can be anything. You can use it to index the sections of the protocol such as `0`, `1`, `2`, ... or `A`, `B`, `C`, ..., or you can write some notes here to divide the protocol into different parts for better readability.
 
 - The `start_time` sheet should look like this:
 
