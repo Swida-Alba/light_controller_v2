@@ -169,14 +169,16 @@ def ConvertTimeToMillisecond(protocol_df, ch_units):
             raise ValueError(f'Channel time unit {ch_units[i]} is not recognized. Please use millisecond(msec, ms), second(sec, s), minute(min, m), or hour(hr, h).')
     
     df_ms = df_ms.fillna(0)
-    df_ms = df_ms.astype(int)
+    # convert columns to integer, except the first column
+    for col in df_ms.columns[1:]:
+        df_ms[col] = df_ms[col].astype(int)
     
-    # if exist value > 2^32 - 1, raise error
-    if df_ms.max().max() > 2**32 - 1:
-        max_val = df_ms.max().max()
-        max_val_loc = df_ms[df_ms == max_val].stack().index.tolist()
-        raise ValueError(f'The value {max_val} in the protocol file is larger than the maximum value of 2^32 - 1. Please check the following locations: {max_val_loc}')
-    
+    # Check for values greater than 2^32 - 1, excluding strings
+    for col in df_ms.columns:
+        if df_ms[col].dtype != object and df_ms[col].max() > 2**32 - 1:
+            max_val = df_ms[col].max()
+            max_val_loc = df_ms[df_ms[col] == max_val].index.tolist()
+            raise ValueError(f'The value {max_val} in column "{col}" is larger than the maximum value of 2^32 - 1. Please check the following rows: {max_val_loc}')
     return df_ms
 
 def str2datetime(time_str):
@@ -392,7 +394,8 @@ def CorrectTime_df(df_ms, calib_factor):
         if col.endswith('_time_ms'):
             df_corrected[col] = df_corrected[col] / calib_factor
     df_corrected = df_corrected.fillna(0)
-    df_corrected = df_corrected.astype(int)
+    for col in df_corrected.columns[1:]:
+        df_corrected[col] = df_corrected[col].astype(int)
     return df_corrected
 
 def CorrectTime_dict(remaining_time, calib_factor):

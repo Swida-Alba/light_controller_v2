@@ -77,7 +77,7 @@ if __name__ == '__main__':
         traceback.print_exc()
         print(f'\nError: {e}\n')
         print('Program is terminated.')
-        if 'ser' in locals():
+        if 'ser' in locals() and ser != '':
             ser.close()
     finally:
         input('\nPress <Enter> to exit:')
