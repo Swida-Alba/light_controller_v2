@@ -111,9 +111,9 @@ def GetChannelInfo(protocol_df):
         ch_name_i = 'CH' + str(i+1)
         
         if (not status_name_i == ch_name_i) or (not col_status_i.split('_')[-1] == 'status'):
-            raise ValueError(f'Column {i*2+1} "{col_status_i}" does not match the format of {ch_name_i} + "_status".')
+            raise ValueError(f'Column {i*2+1} "{col_status_i}" does not match the format of continuous channel index or status assignment, which should be "{ch_name_i}_status".')
         elif (not time_name_i == ch_name_i) or (not col_time_i.split('_')[-2] == 'time'):
-            raise ValueError(f'Column {i*2+2} "{col_time_i}" does not match the format of {ch_name_i} + "_time_[unit]".')
+            raise ValueError(f'Column {i*2+2} "{col_time_i}" does not match the format of continuous channel index or time assignment, which should be "{ch_name_i}_time_[unit]".')
         else:
             ch_num += 1
     
