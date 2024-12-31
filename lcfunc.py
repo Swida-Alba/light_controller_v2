@@ -106,15 +106,16 @@ def GetChannelInfo(protocol_df):
         # check if the column name ends with '_status' and the next column ends with '_time_[unit]'
         col_status_i = protocol_df.columns[i*2+1]
         col_time_i = protocol_df.columns[i*2+2]
+        status_name_i = col_status_i.split('_')[0]
+        time_name_i = col_time_i.split('_')[0]
+        ch_name_i = 'CH' + str(i+1)
         
-        ch_name_i = col_status_i.split('_')[0]
-        if ch_name_i == 'CH' + str(i+1): # check if the channel name is in the format of CH + i (CH1, CH2, ..., starts from CH1)
-            if col_status_i.split('_')[-1] == 'status' and col_time_i.split('_')[-2] == 'time': # check channel parameter pairs
-                ch_num += 1
-            else:
-                raise ValueError(f'Column {i*2+1} "{col_status_i}" and {i*2+2} "{col_time_i}" do not match the format of status and time columns.')
+        if (not status_name_i == ch_name_i) or (not col_status_i.split('_')[-1] == 'status'):
+            raise ValueError(f'Column {i*2+1} "{col_status_i}" does not match the format of {ch_name_i} + "_status".')
+        elif (not time_name_i == ch_name_i) or (not col_time_i.split('_')[-2] == 'time'):
+            raise ValueError(f'Column {i*2+2} "{col_time_i}" does not match the format of {ch_name_i} + "_time_[unit]".')
         else:
-            raise ValueError(f'Channel name {ch_name_i} does not match the format of CH + i (CH1, CH2, ..., starts from CH1) or the sequence is not continuous.')
+            ch_num += 1
     
     # get valid length of each channel
     ch_valid_length = dict()
