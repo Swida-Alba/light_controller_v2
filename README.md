@@ -55,10 +55,18 @@ The protocol file should be a ```.xlsx``` file with the following format:
     | start_time | 21:00 | 21:00 | 2024-12-24 21:00 |
     | wait_status| 1     | 0     | 0                |
 
-  - The first row is the start time of the protocol. The time format can be `HH:MM:SS`, `HH:MM`, `YYYY-MM-DD HH:MM`, or `YYYY-MM-DD HH:MM:SS`. If the time format is `HH:MM:SS` or `HH:MM`, the date will be set to the current date. Please note that the time should be in 24-hour format and should not be earlier than the current time.
+  - The first row is the start time of the protocol. The time format can be `HH:MM:SS`, `HH:MM`, `YYYY-MM-DD HH:MM`, or `YYYY-MM-DD HH:MM:SS`. If the time format is `HH:MM:SS` or `HH:MM`, the date will be set to the current `today`. Please note that the time should be in 24-hour format and should not be earlier than the current time.
   - The second row is the wait status of each channel. If the wait status is 1, the channel will be turned on until the start time. If the wait status is 0, the channel will be turned off until the start time. 
   - The channel number should be consisent with the `protocol` sheet.
+  - Optionally, you can set the `start_time` in seconds, which will be the time that the program will wait before starting the protocol, aka the countdown time. In this case, the `start_time` should be a float number. The `start_time` in seconds can be used in the following format:
 
+    - | Channel    | CH1   | CH2   | CH3  |
+      |------------|-------|-------|------|
+      | start_time | 15    | 30.5  | 0.2  |
+      | wait_status| 1     | 0     | 0    |
+
+    - In this case, the program of CH1 will wait for 15, CH2 will wait for 30.5 seconds, and CH3 will wait for 0.2 seconds before starting the protocol.
+    - __Please note that when the `start_time` is set as countdown, it should be in seconds.__
 - The `calibration` sheet should look like this:
   - | CALIBRATION_FACTOR |
     |--------------------|
