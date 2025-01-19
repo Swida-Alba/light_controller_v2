@@ -36,7 +36,7 @@ if __name__ == '__main__':
         
         df_corrected = CorrectTime(df_ms, calib_factor)
         
-        compressed_patterns = FindRepeatedPatterns(df_corrected, pattern_length=2)
+        compressed_patterns = FindRepeatedPatterns(df_corrected, pattern_length = 2)
         cmd_patterns = GeneratePatternCommands(compressed_patterns)
         for cmd_t in cmd_patterns:
             SendCommand(ser, cmd_t)
@@ -59,7 +59,10 @@ if __name__ == '__main__':
         
         start_time_str = {}
         for ch, t in start_time.items():
-            start_time_str[ch] = t.strftime('%Y-%m-%d %H:%M:%S')
+            if type(t) == datetime.datetime:
+                start_time_str[ch] = t.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                start_time_str[ch] = str(t)
         
         commands_file = os.path.join(os.path.dirname(protocol_path), f'{protocol_name}_commands_{timestamp_str}.txt')
         with open(commands_file, 'w') as f:

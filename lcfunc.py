@@ -218,9 +218,11 @@ def ReadStartTime(df_startTime):
             start_time_nans.append(col)
         elif type(ch_time) is datetime.time:
             start_time[col] = ch_time
+        elif isinstance(ch_time, (int, float, np.integer, np.floating)): # in seconds
+            start_time[col] = ch_time
         else:
             start_time[col] = str2datetime(str(ch_time))
-        
+            Warning(f'Channel "{col}" start time is not in datetime format or countdown in seconds. Auto conversion may cause errors.')
         if pd.isna(ch_status):
             wait_status[col] = None
             wait_status_nans.append(col)
@@ -249,9 +251,15 @@ def CheckStartTimeForChannels(start_time, valid_channels):
     
     # check if start time is earlier than current time
     earlier_start_time = []
+    countdown_channels = []
     for ch in valid_channels:
-        if start_time[ch] < datetime.datetime.now():
+        if isinstance(start_time[ch], (int, float, np.integer, np.floating)):
+            Warning(f'Channel "{ch}" start time is in seconds. It will be treated as countdown.')
+            countdown_channels.append(ch)
+        elif type(start_time[ch]) is datetime.datetime and start_time[ch] < datetime.datetime.now():
             earlier_start_time.append(ch)
+        else:
+            raise ValueError(f'Start time for channel {ch} is not recognized.')
     if earlier_start_time:
         raise ValueError(f'Start time is earlier than current time for the following channels: {earlier_start_time}')
 
@@ -260,7 +268,9 @@ def CountDown(start_time):
     # get remaining time for each channel to start, convert to milliseconds
     remaining_time = dict()
     for ch in start_time.keys():
-        if start_time[ch] is not None:
+        if isinstance(start_time[ch], (int, float, np.integer, np.floating)):
+            remaining_time[ch] = int(start_time[ch] * 1000)
+        elif type(start_time[ch]) is datetime.datetime:
             remaining_time[ch] = int((start_time[ch] - datetime.datetime.now()).total_seconds() * 1000) 
     return remaining_time
 
