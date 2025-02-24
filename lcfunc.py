@@ -259,7 +259,13 @@ def CheckStartTimeForChannels(start_time, valid_channels):
         elif type(start_time[ch]) is datetime.datetime and start_time[ch] < datetime.datetime.now():
             earlier_start_time.append(ch)
         else:
-            raise ValueError(f'Start time for channel {ch} is not recognized.')
+            # convert to string and then to datetime
+            try:
+                start_time[ch] = str2datetime(str(start_time[ch]))
+                if start_time[ch] < datetime.datetime.now():
+                    earlier_start_time.append(ch)
+            except ValueError:
+                raise ValueError(f'Start time for channel {ch} is not recognized. Please use datetime format or countdown number in seconds.')
     if earlier_start_time:
         raise ValueError(f'Start time is earlier than current time for the following channels: {earlier_start_time}')
 
