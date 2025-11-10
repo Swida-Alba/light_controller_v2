@@ -1,86 +1,123 @@
-from lcfunc import *
+"""
+Light Controller Protocol Parser
+
+This is a simple wrapper that uses the LightControllerParser class
+to parse and execute LED control protocols.
+
+The new class-based approach makes the code much cleaner and more maintainable.
+For details, see light_controller_parser.py
+"""
+
+from light_controller_parser import LightControllerParser
 import tkinter as tk
 from tkinter import filedialog
+import sys
+import os
+import subprocess
+from datetime import datetime
+
 
 if __name__ == '__main__':
-    print('Welcom to use the light controller!')
+    print('Welcome to use the light controller!')
+    
     try:
-        print('Please select your protocol file...')
-        protocol_file = filedialog.askopenfilename(title='Select the protocol file', filetypes=[('Excel files', '*.xlsx')])
-        # protocol_file = R'protocol.xlsx'
+        # Get pattern_length parameter from command line (required)
+        pattern_length = 2  # Default value
+        if len(sys.argv) > 1:
+            try:
+                pattern_length = int(sys.argv[1])
+                print(f'Using pattern_length: {pattern_length}')
+            except ValueError:
+                print(f'Error: Invalid pattern_length "{sys.argv[1]}". Must be an integer.')
+                print('Usage: python protocol_parser.py [pattern_length]')
+                print('Example: python protocol_parser.py 4')
+                sys.exit(1)
+        else:
+            print(f'Using default pattern_length: {pattern_length}')
+            print('(To specify: python protocol_parser.py [pattern_length])')
         
-        required_board_type = 'Arduino'
+        # Select protocol file
+        print('\nPlease select your protocol file...')
+        protocol_file = filedialog.askopenfilename(
+            title='Select the protocol file',
+            filetypes=[('Protocol files', '*.xlsx *.txt'), ('Excel files', '*.xlsx'), ('Text files', '*.txt')]
+        )
         
-        df_protocol, df_startTime, calib_factor = ReadExcelFile(protocol_file)
-        channel_units, valid_channels = GetChannelInfo(df_protocol)
-        start_time, wait_status = ReadStartTime(df_startTime)
-        CheckStartTimeForChannels(start_time, valid_channels)
-        df_ms = ConvertTimeToMillisecond(df_protocol, channel_units)
-        for ch in valid_channels:
-            print(f'{ch}: start time: {start_time[ch]}, wait status: {wait_status[ch]}.')
-        
-        ser = SetUpSerialPort(board_type=required_board_type, baudrate=9600)
-        if not ser:
-            raise ValueError('Serial port is not available.')
-        
-        ClearSerialBuffer(ser, print_flag=True)
-        
-        SendGreeting(ser)
-        
-        if calib_factor is None:
-            calibration_parameters = CalibrateArduinoTime(ser, t_send=[40, 60, 80, 100])
-            calib_factor = calibration_parameters['calib_factor']
-            # if calib_factor > 1:
-            #     calib_factor = (calib_factor - 1) * 0.85 + 1
-        print(f'Calibration factor is {calib_factor:.5f}. Correct {(calib_factor - 1) * 12 * 3600:.2f} seconds per 12 hours.')
-        
-        df_corrected = CorrectTime(df_ms, calib_factor)
-        
-        compressed_patterns = FindRepeatedPatterns(df_corrected, pattern_length = 2)
-        cmd_patterns = GeneratePatternCommands(compressed_patterns)
-        for cmd_t in cmd_patterns:
-            SendCommand(ser, cmd_t)
-        
-        time_countdown = CountDown(start_time)
-        remainging_time_corrected = CorrectTime(time_countdown, calib_factor)
-        
-        cmd_wait = GenerateWaitCommands(wait_status, remainging_time_corrected, valid_channels)
-        for cmd_t in cmd_wait:
-            SendCommand(ser, cmd_t)
-        
-        SayBye(ser)
-        ser.close()
-        
-        # write all commands to a txt
-        protocol_path = os.path.abspath(protocol_file)
-        protocol_name = os.path.basename(protocol_path)
-        protocol_name = os.path.splitext(protocol_name)[0]
-        timestamp_str = datetime.datetime.now().strftime(f'%Y%m%d%H%M%S')
-        
-        start_time_str = {}
-        for ch, t in start_time.items():
-            if type(t) == datetime.datetime:
-                start_time_str[ch] = t.strftime('%Y-%m-%d %H:%M:%S')
-            else:
-                start_time_str[ch] = str(t)
-        
-        commands_file = os.path.join(os.path.dirname(protocol_path), f'{protocol_name}_commands_{timestamp_str}.txt')
-        with open(commands_file, 'w') as f:
-            for cmd_t in cmd_wait:
-                f.write(cmd_t)
-            for cmd_t in cmd_patterns:
-                f.write(cmd_t)
-            # write the start time and wait status to the file
-            f.write(f'START_TIME: {start_time_str}\n')
-            # write calibration factor and keep 10 decimals
-            f.write(f'CALIBRATION_FACTOR: {calib_factor:.5f}\n')
-        print(f'Commands are written to {commands_file}.')
+        if not protocol_file:
+            print('No file selected. Exiting.')
+        else:
+            print(f'\nSelected protocol: {protocol_file}')
+            
+            # Create parser instance (using context manager for automatic cleanup)
+            with LightControllerParser(protocol_file, pattern_length=pattern_length, calibration_method='v2') as parser:
+                # Setup serial connection with pattern length verification
+                if not parser.setup_serial(board_type='Arduino', baudrate=9600, 
+                                          verify_pattern_length=True):
+                    raise ValueError('Serial port is not available.')
+                
+                # Parse and execute
+                commands_file = parser.parse_and_execute()
+                print(f'\nProtocol execution completed successfully!')
+                print(f'Commands saved to: {commands_file}')
+                
+                # Automatically generate HTML visualization
+                print('\n' + '='*70)
+                print('🎨 Generating interactive HTML visualization...')
+                print('='*70)
+                
+                try:
+                    # Get upload time (now - when commands are uploaded)
+                    upload_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Generate HTML visualization with real-time status
+                    viz_script = os.path.join(os.path.dirname(__file__), 'viz_protocol_html.py')
+                    
+                    if os.path.exists(viz_script):
+                        result = subprocess.run(
+                            ['python', viz_script, commands_file, '--upload-time', upload_time],
+                            capture_output=True,
+                            text=True
+                        )
+                        
+                        if result.returncode == 0:
+                            print(result.stdout)
+                            
+                            # Extract HTML filename from output
+                            for line in result.stdout.split('\n'):
+                                if 'HTML visualization saved:' in line:
+                                    html_file = line.split(': ')[1].strip()
+                                    
+                                    # Try to open in browser
+                                    try:
+                                        if sys.platform == 'darwin':  # macOS
+                                            subprocess.run(['open', html_file])
+                                        elif sys.platform == 'win32':  # Windows
+                                            subprocess.run(['start', html_file], shell=True)
+                                        else:  # Linux
+                                            subprocess.run(['xdg-open', html_file])
+                                        
+                                        print(f'🌐 Opening visualization in browser...')
+                                    except:
+                                        print(f'📝 Please manually open: {html_file}')
+                        else:
+                            print(f'⚠️  Visualization failed: {result.stderr}')
+                    else:
+                        print(f'⚠️  Visualization script not found: {viz_script}')
+                        print(f'    You can manually run: python viz_protocol_html.py {commands_file}')
+                        
+                except Exception as viz_error:
+                    print(f'⚠️  Could not generate visualization: {viz_error}')
+                    print(f'    Protocol executed successfully, but visualization failed.')
+                
+                print('='*70)
+                
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f'\nError: {e}\n')
         print('Program is terminated.')
-        if 'ser' in locals() and ser != '':
-            ser.close()
     finally:
-        input('\nPress <Enter> to exit:')
+        try:
+            input('\nPress <Enter> to exit: ')
+        except (KeyboardInterrupt, EOFError):
+            pass

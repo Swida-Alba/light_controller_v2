@@ -1,0 +1,52 @@
+# ===================================================================================
+# COMPLETE PROTOCOL EXAMPLE
+# ===================================================================================
+# This file demonstrates all protocol features with clear required/optional markings
+# ===================================================================================
+
+# ----------------------------------------------------------------------------
+# PATTERN COMMANDS (REQUIRED - at least one pattern per channel)
+# ----------------------------------------------------------------------------
+# Format: PATTERN:<id>;CH:<channel>;STATUS:<states>;TIME_MS:<durations>;REPEATS:<count>;PULSE:<optional>
+
+# Channel 1: Alternating ON/OFF pattern
+PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:5;PULSE:,
+
+# Channel 1: Faster blink pattern
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:500,500;REPEATS:10;PULSE:,
+
+# Channel 2: ON/OFF with longer ON time
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:2000,500;REPEATS:3;PULSE:,
+
+# Channel 3: ON with pulse effect, then OFF
+PATTERN:1;CH:3;STATUS:1,0;TIME_MS:1000,2000;REPEATS:5;PULSE:T500pw50,
+
+# Channel 4: Simple solid ON
+PATTERN:1;CH:4;STATUS:1;TIME_MS:5000;REPEATS:1;PULSE:
+
+# ----------------------------------------------------------------------------
+# START_TIME (REQUIRED - must specify for all channels used)
+# ----------------------------------------------------------------------------
+# Format: START_TIME: {'CH1': '<time>', 'CH2': <countdown>, ...}
+# Supports: '21:00', '21:00:00', '2025-11-08 21:00:00', or countdown in seconds
+
+START_TIME: {'CH1': '21:00', 'CH2': 60, 'CH3': '21:30', 'CH4': 120}
+
+# ----------------------------------------------------------------------------
+# WAIT_STATUS (OPTIONAL - defaults to 0/OFF if not specified)
+# ----------------------------------------------------------------------------
+# Format: WAIT_STATUS: {'CH1': 0, 'CH2': 1, ...}
+# Values: 0 = LED OFF during countdown, 1 = LED ON during countdown
+
+WAIT_STATUS: {'CH1': 1, 'CH2': 0, 'CH3': 1, 'CH4': 0}
+
+# ----------------------------------------------------------------------------
+# WAIT_PULSE (OPTIONAL - no pulsing during wait if not specified)
+# ----------------------------------------------------------------------------
+# Format: WAIT_PULSE: {'CH1': {'period': <ms>, 'pw': <ms>}, ...}
+# Only affects channels with WAIT_STATUS: 1
+# period: Pulse period in milliseconds (e.g., 2000 = 2s period = 0.5 Hz)
+# pw: Pulse width in milliseconds (time LED is ON per cycle)
+
+WAIT_PULSE: {'CH1': {'period': 2000, 'pw': 100}}
+

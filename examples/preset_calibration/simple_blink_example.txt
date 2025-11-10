@@ -1,0 +1,150 @@
+# ============================================================================
+# PATTERN LENGTH = 2 EXAMPLE (DEFAULT)
+# ============================================================================
+# This example demonstrates optimal usage with pattern_length=2
+# Best for: Simple alternating patterns (ON/OFF, blink, two-state cycles)
+#
+# USAGE: python protocol_parser.py 2
+#        or just: python protocol_parser.py (2 is not default, 4 is)
+#
+# Pattern Structure: Each pattern contains 2 elements
+# Element format: (STATUS, TIME_MS, PERIOD, PULSE_WIDTH)
+#
+# Why pattern_length=2?
+# - Most protocols alternate between two states (ON/OFF)
+# - Minimal memory usage on Arduino
+# - Maximum compression for simple patterns
+# - Efficient for repetitive sequences
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL 1: Simple Blink Pattern (No Pulse)
+# ----------------------------------------------------------------------------
+# Pattern 1: LED ON for 1s, OFF for 1s, repeat 20 times
+# This is the classic blink pattern - perfect for pattern_length=2
+PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:20;PULSE:T0pw0,T0pw0
+
+# Pattern 2: LED ON for 2s, OFF for 0.5s, repeat 10 times  
+# Asymmetric timing but still 2-element pattern
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:2000,500;REPEATS:10;PULSE:T0pw0,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 2: Pulsed Blink Pattern
+# ----------------------------------------------------------------------------
+# Pattern 1: Pulse at 1Hz (T1000pw100) for 5s, then OFF for 5s, repeat 8x
+# Element 1: LED ON with 1Hz pulse for 5 seconds
+# Element 2: LED OFF (no pulse) for 5 seconds
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:5000,5000;REPEATS:8;PULSE:T1000pw100,T0pw0
+
+# Pattern 2: OFF for 3s, then pulse at 2Hz (T500pw50) for 3s, repeat 12x
+# Element 1: LED OFF for 3 seconds
+# Element 2: LED ON with 2Hz pulse for 3 seconds
+PATTERN:2;CH:2;STATUS:0,1;TIME_MS:3000,3000;REPEATS:12;PULSE:T0pw0,T500pw50
+
+# ----------------------------------------------------------------------------
+# CHANNEL 3: Variable Duty Cycle
+# ----------------------------------------------------------------------------
+# Pattern 1: Short ON (0.5s), long OFF (4.5s), repeat 15x
+# Low duty cycle pattern - LED mostly off
+PATTERN:1;CH:3;STATUS:1,0;TIME_MS:500,4500;REPEATS:15;PULSE:T0pw0,T0pw0
+
+# Pattern 2: Long ON (4s), short OFF (1s), repeat 15x
+# High duty cycle pattern - LED mostly on
+PATTERN:2;CH:3;STATUS:1,0;TIME_MS:4000,1000;REPEATS:15;PULSE:T0pw0,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 4: Fast Heartbeat Pulse
+# ----------------------------------------------------------------------------
+# Pattern 1: Double pulse (fast ON/OFF/ON/OFF), then rest
+# Element 1: Rapid pulse at 5Hz (T200pw20) for 0.4s (2 pulses)
+# Element 2: OFF for 1.6s (rest period)
+PATTERN:1;CH:4;STATUS:1,0;TIME_MS:400,1600;REPEATS:30;PULSE:T200pw20,T0pw0
+
+# Pattern 2: Single pulse, then long rest
+# Element 1: Pulse at 10Hz (T100pw10) for 0.1s (1 pulse)
+# Element 2: OFF for 1.9s (long rest)
+PATTERN:2;CH:4;STATUS:1,0;TIME_MS:100,1900;REPEATS:30;PULSE:T100pw10,T0pw0
+
+# ============================================================================
+# START TIME CONFIGURATION
+# ============================================================================
+START_TIME: {
+    'CH1': 5,
+    'CH2': 10,
+    'CH3': 15,
+    'CH4': 20
+}
+
+# ============================================================================
+# WAIT STATUS CONFIGURATION
+# ============================================================================
+# CH1: LED OFF during wait
+# CH2: LED ON with slow pulse during wait
+# CH3: LED ON steady during wait
+# CH4: LED OFF during wait
+WAIT_STATUS: {
+    'CH1': 0,
+    'CH2': 1,
+    'CH3': 1,
+    'CH4': 0
+}
+
+# ============================================================================
+# WAIT PULSE CONFIGURATION
+# ============================================================================
+WAIT_PULSE: {
+    'CH2': {'frequency': 0.5, 'pulse_width': 100},
+}
+
+# ============================================================================
+# CALIBRATION
+# ============================================================================
+CALIBRATION_FACTOR: 1.000000
+
+# ============================================================================
+# PATTERN_LENGTH=2 COMPRESSION ANALYSIS
+# ============================================================================
+# 
+# Without compression (if we sent every state change individually):
+#   CH1: 40 commands (20 repeats × 2 patterns × 2 states each)
+#   CH2: 32 commands (8 repeats × 2 patterns × 2 states each)
+#   CH3: 60 commands (15 repeats × 2 patterns × 2 states each)
+#   CH4: 120 commands (30 repeats × 2 patterns × 2 states each)
+#   TOTAL: 252 commands
+#
+# With pattern_length=2 compression:
+#   CH1: 2 commands (2 patterns)
+#   CH2: 2 commands (2 patterns)
+#   CH3: 2 commands (2 patterns)
+#   CH4: 2 commands (2 patterns)
+#   TOTAL: 8 commands
+#
+# Compression ratio: 252:8 = 31.5:1 (96.8% reduction!)
+#
+# Arduino Memory Usage (per channel):
+#   PATTERN_LENGTH=2 → 32 bytes per pattern
+#   Total: 8 patterns × 32 bytes = 256 bytes
+#   Arduino Due (96KB RAM): Can handle 300+ patterns
+#
+# Why pattern_length=2 is optimal here:
+# ✓ All patterns naturally have 2 elements (ON/OFF cycle)
+# ✓ Maximum compression efficiency
+# ✓ Minimal Arduino memory usage
+# ✓ Simple and clear pattern structure
+# ============================================================================
+
+# ============================================================================
+# EXPECTED OUTPUT (when running with pattern_length=2)
+# ============================================================================
+# Compression efficiency analysis:
+#   pattern_length=2: 8 commands ← optimal ← given
+#   pattern_length=4: 16 commands
+#   pattern_length=8: 32 commands
+#
+# 💡 Perfect match! pattern_length=2 is optimal for this protocol
+#
+# 📏 Protocol pattern analysis:
+#    Required PATTERN_LENGTH: 2
+#    Arduino PATTERN_LENGTH:  2
+#    ✓ Verification passed
+# ============================================================================

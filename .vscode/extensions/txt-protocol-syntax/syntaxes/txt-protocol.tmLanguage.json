@@ -1,0 +1,105 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "TXT Protocol",
+  "scopeName": "source.txt-protocol",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#commands"
+    },
+    {
+      "include": "#dictionaries"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#strings"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.txt-protocol",
+          "match": "#.*$",
+          "captures": {
+            "0": {
+              "name": "comment.line.txt-protocol"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.txt-protocol",
+          "match": "\\b(PROTOCOL|TIME_UNIT|START_TIME|REPEAT|PULSE|WAIT_STATUS|WAIT_PULSE|COMMANDS)\\b"
+        }
+      ]
+    },
+    "commands": {
+      "patterns": [
+        {
+          "name": "entity.name.function.txt-protocol",
+          "match": "\\b(CH[1-4]|WAIT)\\b"
+        },
+        {
+          "name": "constant.numeric.txt-protocol",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+        }
+      ]
+    },
+    "dictionaries": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.dictionary.begin.txt-protocol",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.definition.dictionary.end.txt-protocol",
+          "match": "\\}"
+        },
+        {
+          "name": "string.quoted.single.txt-protocol",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.txt-protocol",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.txt-protocol",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.txt-protocol",
+          "begin": "'",
+          "end": "'"
+        },
+        {
+          "name": "string.quoted.double.txt-protocol",
+          "begin": "\"",
+          "end": "\""
+        }
+      ]
+    }
+  }
+}

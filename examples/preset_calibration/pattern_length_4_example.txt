@@ -1,0 +1,207 @@
+# ============================================================================
+# PATTERN LENGTH = 4 EXAMPLE
+# ============================================================================
+# This example demonstrates optimal usage with pattern_length=4
+# Best for: Complex multi-phase patterns, 4-state cycles, sequences
+#
+# USAGE: python protocol_parser.py 4
+#
+# Pattern Structure: Each pattern contains 4 elements
+# Element format: (STATUS, TIME_MS, PERIOD, PULSE_WIDTH)
+#
+# Why pattern_length=4?
+# - Protocol has natural 4-phase cycles
+# - Captures complete sequences in single pattern
+# - Good balance between compression and flexibility
+# - Common for multi-step lighting protocols
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL 1: Four-Phase Warning Light
+# ----------------------------------------------------------------------------
+# Pattern 1: Classic warning sequence (4 distinct phases)
+# Phase 1: Rapid pulse at 5Hz for 0.5s (attention grabber)
+# Phase 2: OFF for 0.5s (brief pause)
+# Phase 3: Slow pulse at 1Hz for 1s (sustained signal)
+# Phase 4: OFF for 2s (rest period)
+# This 4-element cycle repeats 10 times
+PATTERN:1;CH:1;STATUS:1,0,1,0;TIME_MS:500,500,1000,2000;REPEATS:10;PULSE:T200pw20,T0pw0,T1000pw100,T0pw0
+
+# Pattern 2: Escalating intensity sequence
+# Phase 1: Slow pulse (2s period) for 2s
+# Phase 2: Medium pulse (1s period) for 2s  
+# Phase 3: Fast pulse (0.5s period) for 2s
+# Phase 4: Very fast pulse (0.2s period) for 2s
+# Shows increasing urgency through acceleration
+PATTERN:2;CH:1;STATUS:1,1,1,1;TIME_MS:2000,2000,2000,2000;REPEATS:5;PULSE:T2000pw200,T1000pw100,T500pw50,T200pw20
+
+# ----------------------------------------------------------------------------
+# CHANNEL 2: Traffic Light Simulation
+# ----------------------------------------------------------------------------
+# Pattern 1: Standard traffic light cycle
+# Phase 1: GREEN (steady ON) for 5s
+# Phase 2: YELLOW (pulse at 2Hz) for 2s (warning)
+# Phase 3: RED (steady ON) for 5s
+# Phase 4: OFF for 1s (reset)
+# Note: Use different channels for different colors; this shows timing
+PATTERN:1;CH:2;STATUS:1,1,1,0;TIME_MS:5000,2000,5000,1000;REPEATS:8;PULSE:T0pw0,T500pw250,T0pw0,T0pw0
+
+# Pattern 2: Pedestrian crossing signal
+# Phase 1: WALK (steady ON) for 10s
+# Phase 2: DON'T WALK flashing (2Hz) for 5s
+# Phase 3: DON'T WALK (steady ON) for 10s
+# Phase 4: OFF for 1s (cycle reset)
+PATTERN:2;CH:2;STATUS:1,1,1,0;TIME_MS:10000,5000,10000,1000;REPEATS:4;PULSE:T0pw0,T500pw250,T0pw0,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 3: Breathing Effect (4-phase smooth transition)
+# ----------------------------------------------------------------------------
+# Pattern 1: Smooth breathing with variable pulse widths
+# Phase 1: Fade in - short pulses (20% duty)
+# Phase 2: Peak - medium pulses (50% duty)
+# Phase 3: Fade out - short pulses (20% duty)
+# Phase 4: Rest - LED OFF
+PATTERN:1;CH:3;STATUS:1,1,1,0;TIME_MS:2000,2000,2000,2000;REPEATS:12;PULSE:T100pw20,T100pw50,T100pw20,T0pw0
+
+# Pattern 2: Heartbeat pattern (double-pulse with rest)
+# Phase 1: First beat - strong pulse
+# Phase 2: Short gap
+# Phase 3: Second beat - weaker pulse
+# Phase 4: Long rest period
+PATTERN:2;CH:3;STATUS:1,0,1,0;TIME_MS:200,200,200,1400;REPEATS:20;PULSE:T50pw40,T0pw0,T50pw20,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 4: Morse Code SOS
+# ----------------------------------------------------------------------------
+# Pattern 1: Morse "S" (3 short) + "O" (3 long) + "S" (3 short) + pause
+# Note: This would be better split, but demonstrates 4-phase concept
+# Phase 1: Short blink (dit) 3x in 0.6s
+# Phase 2: Long blink (dah) 3x in 1.8s
+# Phase 3: Short blink (dit) 3x in 0.6s
+# Phase 4: Rest for 3s
+PATTERN:1;CH:4;STATUS:1,1,1,0;TIME_MS:600,1800,600,3000;REPEATS:5;PULSE:T200pw100,T600pw400,T200pw100,T0pw0
+
+# Pattern 2: Emergency flash sequence
+# Phase 1: Double flash rapid
+# Phase 2: Pause
+# Phase 3: Triple flash rapid
+# Phase 4: Long pause
+PATTERN:2;CH:4;STATUS:1,0,1,0;TIME_MS:400,200,600,1800;REPEATS:10;PULSE:T200pw100,T0pw0,T200pw100,T0pw0
+
+# ============================================================================
+# START TIME CONFIGURATION
+# ============================================================================
+START_TIME: {
+    'CH1': 5,
+    'CH2': 10,
+    'CH3': 15,
+    'CH4': 20
+}
+
+# ============================================================================
+# WAIT STATUS CONFIGURATION
+# ============================================================================
+WAIT_STATUS: {
+    'CH1': 0,
+    'CH2': 1,
+    'CH3': 1,
+    'CH4': 0
+}
+
+# ============================================================================
+# WAIT PULSE CONFIGURATION
+# ============================================================================
+WAIT_PULSE: {
+    'CH2': {'frequency': 1.0, 'pulse_width': 100},
+    'CH3': {'frequency': 0.5, 'pulse_width': 50}
+}
+
+# ============================================================================
+# CALIBRATION
+# ============================================================================
+CALIBRATION_FACTOR: 1.000000
+
+# ============================================================================
+# PATTERN_LENGTH=4 COMPRESSION ANALYSIS
+# ============================================================================
+#
+# Without compression (if we sent every state change individually):
+#   CH1: 60 commands (10+5 repeats, 4 phases each)
+#   CH2: 48 commands (8+4 repeats, 4 phases each)
+#   CH3: 128 commands (12+20 repeats, 4 phases each)
+#   CH4: 60 commands (5+10 repeats, 4 phases each)
+#   TOTAL: 296 commands
+#
+# With pattern_length=4 compression:
+#   CH1: 2 commands (2 patterns)
+#   CH2: 2 commands (2 patterns)
+#   CH3: 2 commands (2 patterns)
+#   CH4: 2 commands (2 patterns)
+#   TOTAL: 8 commands
+#
+# Compression ratio: 296:8 = 37:1 (97.3% reduction!)
+#
+# Comparison with pattern_length=2:
+#   If we used pattern_length=2 for this protocol:
+#   - Would need 16 commands (each 4-phase split into 2 patterns of 2-phase)
+#   - 50% less efficient!
+#   - Pattern logic would be harder to understand
+#   - Why: Protocol naturally has 4-phase cycles
+#
+# Arduino Memory Usage (per channel):
+#   PATTERN_LENGTH=4 → 64 bytes per pattern
+#   Total: 8 patterns × 64 bytes = 512 bytes
+#   Arduino Due (96KB RAM): Can handle 150+ patterns
+#
+# Why pattern_length=4 is optimal here:
+# ✓ All patterns naturally have 4 phases/elements
+# ✓ Captures complete cycles in single pattern
+# ✓ Better compression than pattern_length=2
+# ✓ Still efficient memory usage on Arduino
+# ✓ Clear semantic meaning (each pattern = complete sequence)
+# ============================================================================
+
+# ============================================================================
+# PATTERN DESIGN PRINCIPLES FOR PATTERN_LENGTH=4
+# ============================================================================
+#
+# Good uses of 4-element patterns:
+# ✓ Multi-phase warning sequences (attention → pause → sustain → rest)
+# ✓ Traffic light cycles (green → yellow → red → off)
+# ✓ Breathing/fading effects (fade in → peak → fade out → rest)
+# ✓ Complex morse or coded signals
+# ✓ Heartbeat patterns (beat1 → pause → beat2 → rest)
+# ✓ Escalating intensity sequences
+#
+# When to use pattern_length=4 instead of 2:
+# 1. Protocol has natural 4-step cycles
+# 2. Phases have semantic meaning as a group
+# 3. Would need 2+ patterns with pattern_length=2
+# 4. Want to capture complete sequence in one pattern
+#
+# When NOT to use pattern_length=4:
+# ✗ Simple ON/OFF alternation (use pattern_length=2)
+# ✗ No repeating 4-phase structure (wasteful)
+# ✗ Arduino has PATTERN_LENGTH=2 (incompatible)
+# ✗ Memory constrained system
+# ============================================================================
+
+# ============================================================================
+# EXPECTED OUTPUT (when running with pattern_length=4)
+# ============================================================================
+# Compression efficiency analysis:
+#   pattern_length=2: 16 commands
+#   pattern_length=4: 8 commands ← optimal ← given
+#   pattern_length=8: 16 commands
+#
+# 💡 Perfect match! pattern_length=4 is optimal for this protocol
+#
+# 📏 Protocol pattern analysis:
+#    Required PATTERN_LENGTH: 4
+#    Arduino PATTERN_LENGTH:  4 (or higher)
+#    ✓ Verification passed
+#
+# Note: Requires Arduino firmware with PATTERN_LENGTH >= 4
+# Update light_controller_v2_arduino.ino line 3:
+#   const int PATTERN_LENGTH = 4;
+# ============================================================================

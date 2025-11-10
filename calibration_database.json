@@ -1,0 +1,28 @@
+{
+  "0852420f343bb48d": {
+    "calib_factor": 0.9999283030573852,
+    "offset": 0.046424301647788276,
+    "r_squared": 0.9999999646705927,
+    "method": "v2",
+    "timestamp": "2025-11-10 01:55:40",
+    "board_info": {
+      "port": "/dev/cu.usbmodem1101",
+      "description": "Arduino Due Prog. Port",
+      "manufacturer": "Arduino (www.arduino.cc)",
+      "serial_number": "85937313737351D021D0"
+    }
+  },
+  "f34a7d5e47d73acb": {
+    "calib_factor": 1.0010281525236187,
+    "offset": -0.04260728575964359,
+    "r_squared": 0.9999999717969196,
+    "method": "v2",
+    "timestamp": "2025-11-10 02:30:03",
+    "board_info": {
+      "port": "/dev/cu.usbmodem1101",
+      "description": "IOUSBHostDevice",
+      "manufacturer": "Arduino (www.arduino.cc)",
+      "serial_number": "442383137383511181F1"
+    }
+  }
+}

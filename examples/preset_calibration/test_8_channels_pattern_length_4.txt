@@ -1,0 +1,54 @@
+# Test Protocol - 8 Channels
+# Tests visualization layout with full channel capacity
+
+# Channel 1: Simple blink
+PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:10;PULSE:T0pw0,T0pw0
+
+# Channel 2: Pulsing on/off
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:2000,2000;REPEATS:8;PULSE:T1000pw100,T0pw0
+
+# Channel 3: Fast pulse
+PATTERN:1;CH:3;STATUS:1,0;TIME_MS:500,500;REPEATS:20;PULSE:T100pw10,T0pw0
+
+# Channel 4: Slow alternation
+PATTERN:1;CH:4;STATUS:1,0;TIME_MS:3000,1000;REPEATS:12;PULSE:T0pw0,T0pw0
+
+# Channel 5: Complex pulsing pattern
+PATTERN:1;CH:5;STATUS:1,0,1;TIME_MS:1000,500,1500;REPEATS:6;PULSE:T500pw50,T0pw0,T200pw20
+
+# Channel 6: Very fast pulse
+PATTERN:1;CH:6;STATUS:1,0;TIME_MS:800,800;REPEATS:15;PULSE:T50pw5,T0pw0
+
+# Channel 7: Long on, short off
+PATTERN:1;CH:7;STATUS:1,0;TIME_MS:4000,500;REPEATS:10;PULSE:T0pw0,T0pw0
+
+# Channel 8: Multiple states with different pulses
+PATTERN:1;CH:8;STATUS:1,0,1,0;TIME_MS:600,400,800,200;REPEATS:8;PULSE:T300pw30,T0pw0,T150pw15,T0pw0
+
+# Start times
+START_TIME: {
+    'CH1': 5,
+    'CH2': 10,
+    'CH3': 15,
+    'CH4': 20,
+    'CH5': 25,
+    'CH6': 30,
+    'CH7': 35,
+    'CH8': 40
+}
+
+# Wait status
+WAIT_STATUS: {
+    'CH1': 0,
+    'CH2': 1,
+    'CH3': 1,
+    'CH4': 0,
+    'CH5': 1,
+    'CH6': 1,
+    'CH7': 0,
+    'CH8': 1
+}
+
+# Calibration
+CALIBRATION_FACTOR: 1.000000
+

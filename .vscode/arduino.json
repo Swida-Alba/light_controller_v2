@@ -1,0 +1,6 @@
+{
+    "board": "arduino:sam:arduino_due_x",
+    "port": "/dev/cu.usbmodem21101",
+    "sketch": "light_controller_v2_2_arduino/light_controller_v2_2_arduino.ino",
+    "output": "build"
+}

@@ -1,0 +1,115 @@
+# ============================================================================
+# BASIC PROTOCOL EXAMPLE
+# ============================================================================
+# This file demonstrates the fundamental features of the TXT protocol format.
+# Perfect for getting started with the Light Controller system.
+#
+# Features demonstrated:
+# - Multi-channel pattern definitions
+# - Pulse parameters (period and pulse width)
+# - Multiple patterns per channel
+# - Start time configuration (countdown and scheduled)
+# - Wait status (LED behavior before pattern starts)
+# - Wait pulse (pulsing during wait period)
+# - Time calibration
+#
+# PULSE FORMAT: T<period_ms>pw<pulse_width_ms>
+# - T = Period in milliseconds
+# - pw = Pulse width in milliseconds
+# - Example: T1000pw100 = 1 Hz (1000ms period), 100ms ON
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL 1 PATTERNS
+# ----------------------------------------------------------------------------
+# Pattern 1: LED OFF for 5s, then pulse at 1Hz (100ms ON) for 5s, repeat 10x
+PATTERN:1;CH:1;STATUS:0,1;TIME_MS:5000,5000;REPEATS:10;PULSE:T0pw0,T1000pw100
+
+# Pattern 2: LED pulse at 0.5Hz (200ms ON) for 5s, then OFF 5s, repeat 10x
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:5000,5000;REPEATS:10;PULSE:T2000pw200,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 2 PATTERNS
+# ----------------------------------------------------------------------------
+# Pattern 1: LED OFF for 8s, then pulse at 2Hz (50ms ON) for 8s, repeat 8x
+PATTERN:1;CH:2;STATUS:0,1;TIME_MS:8000,8000;REPEATS:8;PULSE:T0pw0,T500pw50
+
+# Pattern 2: LED pulse at 0.1Hz (300ms ON) for 8s, then OFF 8s, repeat 8x
+PATTERN:2;CH:2;STATUS:1,0;TIME_MS:8000,8000;REPEATS:8;PULSE:T10000pw300,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 3 PATTERNS - Simple on/off without pulse
+# ----------------------------------------------------------------------------
+# Pattern 1: LED OFF for 6s, then steady ON for 6s, repeat 12x
+PATTERN:1;CH:3;STATUS:0,1;TIME_MS:6000,6000;REPEATS:12
+
+# Pattern 2: LED steady ON for 6s, then OFF for 6s, repeat 12x
+PATTERN:2;CH:3;STATUS:1,0;TIME_MS:6000,6000;REPEATS:12
+
+# ============================================================================
+# START TIME CONFIGURATION
+# ============================================================================
+# Defines when each channel should begin executing its patterns
+#
+# CH1: Countdown mode - starts 10 seconds after protocol upload
+# CH2: Scheduled mode - starts at 23:59 today
+# CH3: Countdown mode - starts 30 seconds after protocol upload
+START_TIME: {
+    'CH1': 10,
+    'CH2': '23:59:00',
+    'CH3': 5
+}
+
+# ============================================================================
+# WAIT STATUS CONFIGURATION
+# ============================================================================
+# Controls LED state during wait period (before pattern starts)
+#
+# CH1: LED ON with pulse during wait (uses WAIT_PULSE settings)
+# CH2: LED ON steady during wait (no WAIT_PULSE specified)
+# CH3: LED OFF during wait (silent waiting)
+WAIT_STATUS: {
+    'CH1': 1,
+    'CH2': 1,
+    'CH3': 0
+}
+
+# ============================================================================
+# WAIT PULSE CONFIGURATION
+# ============================================================================
+# Defines pulse behavior during wait period (only applies if WAIT_STATUS=1)
+# Uses frequency/pulse_width dictionary format (not T/pw format)
+#
+# CH1: Slow pulse at 0.5Hz with 100ms pulse width
+# CH2: Faster pulse at 1.0Hz with 50ms pulse width
+# CH3: Not applicable (WAIT_STATUS=0, LED is OFF during wait)
+WAIT_PULSE: {
+    'CH1': {'frequency': 0.5, 'pulse_width': 100},
+    'CH2': {'frequency': 1.0, 'pulse_width': 50}
+}
+
+# ============================================================================
+# CALIBRATION
+# ============================================================================
+# Timing calibration factor, generated from calibration run
+CALIBRATION_FACTOR: 1.000000
+
+# ============================================================================
+# PULSE FORMAT REFERENCE
+# ============================================================================
+# In PATTERN lines: T[period]pw[pulse_width]
+#   - T1000pw100 = 1 Hz (1000ms period), 100ms pulse
+#   - T2000pw200 = 0.5 Hz (2000ms period), 200ms pulse
+#   - T500pw50 = 2 Hz (500ms period), 50ms pulse
+#   - T10000pw300 = 0.1 Hz (10000ms period), 300ms pulse
+#   - T0pw0 = No pulse (steady state)
+#
+# In WAIT_PULSE: Use frequency/pulse_width dictionary format
+#   - 'frequency': 0.5 = 0.5 Hz
+#   - 'pulse_width': 100 = 100ms
+#
+# Conversion: period_ms = 1000 / frequency_hz
+#   - 0.5 Hz → 1000/0.5 = 2000ms
+#   - 1 Hz → 1000/1 = 1000ms
+#   - 2 Hz → 1000/2 = 500ms
+# ============================================================================

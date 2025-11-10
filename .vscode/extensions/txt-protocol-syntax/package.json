@@ -1,0 +1,23 @@
+{
+  "name": "txt-protocol-syntax",
+  "displayName": "TXT Protocol Syntax Highlighter",
+  "description": "Syntax highlighting for Light Controller TXT protocol files",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [{
+      "id": "txt-protocol",
+      "aliases": ["TXT Protocol", "txt-protocol"],
+      "extensions": [".txt"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "txt-protocol",
+      "scopeName": "source.txt-protocol",
+      "path": "./syntaxes/txt-protocol.tmLanguage.json"
+    }]
+  }
+}

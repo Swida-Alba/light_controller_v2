@@ -1,0 +1,121 @@
+# ============================================================================
+# SIMPLE BLINK EXAMPLE - AUTOMATIC CALIBRATION
+# ============================================================================
+# This example demonstrates automatic calibration without manual CALIBRATION_FACTOR.
+# The system will automatically:
+#   1. Identify your Arduino board by serial number/VID/PID
+#   2. Check the calibration database for existing calibration
+#   3. Prompt for calibration only if not previously calibrated
+#   4. Store the calibration for future use with this specific board
+#
+# BENEFITS OF AUTOMATIC CALIBRATION:
+#   - No manual calibration factor management
+#   - Works seamlessly when switching Arduino boards
+#   - Calibration stored per board in calibration_database.json
+#   - Eliminates errors from forgotten or incorrect calibration factors
+#
+# USAGE: python protocol_parser.py 2 <port>
+#        Example: python protocol_parser.py 2 /dev/cu.usbmodem14301
+#
+# FIRST-TIME SETUP:
+#   When you first run with a new Arduino, you'll be prompted:
+#   "Arduino not calibrated. Calibrate now? (Y/n)"
+#   Follow the prompts to calibrate (default: 300 seconds, method: v2_improved)
+#   The calibration is saved automatically for future use.
+#
+# Pattern Structure: Each pattern contains 2 elements (pattern_length=2)
+# Element format: (STATUS, TIME_MS, PERIOD, PULSE_WIDTH)
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL 1: Simple Blink Pattern (No Pulse)
+# ----------------------------------------------------------------------------
+# Pattern 1: LED ON for 1s, OFF for 1s, repeat 20 times
+# This is the classic blink pattern - perfect for pattern_length=2
+PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:20;PULSE:T0pw0,T0pw0
+
+# Pattern 2: LED ON for 2s, OFF for 0.5s, repeat 10 times  
+# Asymmetric timing but still 2-element pattern
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:2000,500;REPEATS:10;PULSE:T0pw0,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 2: Pulsed Blink Pattern
+# ----------------------------------------------------------------------------
+# Pattern 1: Pulse at 1Hz (T1000pw100) for 5s, then OFF for 5s, repeat 8x
+# Element 1: LED ON with 1Hz pulse for 5 seconds
+# Element 2: LED OFF (no pulse) for 5 seconds
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:5000,5000;REPEATS:8;PULSE:T1000pw100,T0pw0
+
+# Pattern 2: OFF for 3s, then pulse at 2Hz (T500pw50) for 3s, repeat 12x
+# Element 1: LED OFF for 3 seconds
+# Element 2: LED ON with 2Hz pulse for 3 seconds
+PATTERN:2;CH:2;STATUS:0,1;TIME_MS:3000,3000;REPEATS:12;PULSE:T0pw0,T500pw50
+
+# ----------------------------------------------------------------------------
+# CHANNEL 3: Variable Duty Cycle
+# ----------------------------------------------------------------------------
+# Pattern 1: Short ON (0.5s), long OFF (4.5s), repeat 15x
+# Low duty cycle pattern - LED mostly off
+PATTERN:1;CH:3;STATUS:1,0;TIME_MS:500,4500;REPEATS:15;PULSE:T0pw0,T0pw0
+
+# Pattern 2: Long ON (4s), short OFF (1s), repeat 15x
+# High duty cycle pattern - LED mostly on
+PATTERN:2;CH:3;STATUS:1,0;TIME_MS:4000,1000;REPEATS:15;PULSE:T0pw0,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 4: Fast Heartbeat Pulse
+# ----------------------------------------------------------------------------
+# Pattern 1: Double pulse (fast ON/OFF/ON/OFF), then rest
+# Element 1: Rapid pulse at 5Hz (T200pw20) for 0.4s (2 pulses)
+# Element 2: OFF for 1.6s (rest period)
+PATTERN:1;CH:4;STATUS:1,0;TIME_MS:400,1600;REPEATS:30;PULSE:T200pw20,T0pw0
+
+# Pattern 2: Single pulse, then long rest
+# Element 1: Pulse at 10Hz (T100pw10) for 0.1s (1 pulse)
+# Element 2: OFF for 1.9s (long rest)
+PATTERN:2;CH:4;STATUS:1,0;TIME_MS:100,1900;REPEATS:30;PULSE:T100pw10,T0pw0
+
+# ============================================================================
+# START TIME CONFIGURATION
+# ============================================================================
+START_TIME: {
+    'CH1': 5,
+    'CH2': 10,
+    'CH3': 15,
+    'CH4': 20
+}
+
+# ============================================================================
+# WAIT STATUS CONFIGURATION
+# ============================================================================
+# CH1: LED OFF during wait
+# CH2: LED ON with slow pulse during wait
+# CH3: LED ON steady during wait
+# CH4: LED OFF during wait
+WAIT_STATUS: {
+    'CH1': 0,
+    'CH2': 1,
+    'CH3': 1,
+    'CH4': 0
+}
+
+# ============================================================================
+# WAIT PULSE CONFIGURATION
+# ============================================================================
+WAIT_PULSE: {
+    'CH2': {'frequency': 0.5, 'pulse_width': 100},
+}
+
+# ============================================================================
+# NOTE: NO CALIBRATION_FACTOR NEEDED
+# ============================================================================
+# This protocol uses automatic calibration.
+# The calibration factor is retrieved from the database based on your Arduino's
+# unique identifier (serial number or VID:PID).
+#
+# To manually recalibrate, use: python protocol_parser.py 2 <port> --calibrate
+# To view stored calibrations: python utils/manage_calibrations.py list
+# To test board identification: python test_board_info.py
+#
+# For more information, see: docs/AUTO_CALIBRATION_DATABASE.md
+# ============================================================================

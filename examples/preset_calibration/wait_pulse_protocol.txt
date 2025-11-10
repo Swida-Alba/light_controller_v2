@@ -1,0 +1,26 @@
+# ===================================================================================
+# WAIT PULSE PROTOCOL EXAMPLE
+# ===================================================================================
+# Demonstrates wait period features
+# PULSE FORMAT: T[period_ms]pw[pulse_width_ms]
+# ===================================================================================
+
+# Channel 1: Pulsing wait behavior
+PATTERN:1;CH:1;STATUS:0,1;TIME_MS:10000,10000;REPEATS:5;PULSE:T0pw0,T1000pw100
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:10000,10000;REPEATS:5;PULSE:T2000pw200,T0pw0
+
+# Channel 2: Steady wait behavior
+PATTERN:1;CH:2;STATUS:0,1;TIME_MS:15000,15000;REPEATS:3;PULSE:T0pw0,T500pw50
+PATTERN:2;CH:2;STATUS:1,0;TIME_MS:15000,15000;REPEATS:3;PULSE:T10000pw300,T0pw0
+
+# Channel 3: Silent wait behavior
+PATTERN:1;CH:3;STATUS:0,1;TIME_MS:12000,12000;REPEATS:4;PULSE:T0pw0,T2000pw150
+PATTERN:2;CH:3;STATUS:1,0;TIME_MS:12000,12000;REPEATS:4;PULSE:T1000pw100,T0pw0
+
+START_TIME: {'CH1': 30, 'CH2': 45, 'CH3': 60}
+
+WAIT_STATUS: {'CH1': 1, 'CH2': 1, 'CH3': 0}
+
+WAIT_PULSE: {'CH1': {'period': 2000, 'pw': 100}}
+
+CALIBRATION_FACTOR: 1.000000

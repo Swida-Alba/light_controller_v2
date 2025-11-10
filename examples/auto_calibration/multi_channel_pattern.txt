@@ -1,0 +1,98 @@
+# ============================================================================
+# MULTI-CHANNEL PATTERN - AUTOMATIC CALIBRATION
+# ============================================================================
+# This example demonstrates automatic calibration with complex multi-channel
+# patterns using pattern_length=4 (four elements per pattern).
+#
+# NO MANUAL CALIBRATION_FACTOR REQUIRED
+# The system automatically:
+#   - Identifies your Arduino via serial number/VID/PID
+#   - Checks if board is already calibrated in database
+#   - Prompts for calibration only if needed (first time)
+#   - Saves calibration for future automatic retrieval
+#
+# PATTERN LENGTH = 4:
+# Best for: Complex sequences requiring 4 distinct states
+# Each pattern has 4 elements: (STATUS, TIME_MS, REPEATS, PULSE)
+#
+# USAGE: python protocol_parser.py 4 <port>
+#        Example: python protocol_parser.py 4 /dev/cu.usbmodem14301
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL 1: Four-Phase Cycle
+# ----------------------------------------------------------------------------
+# Pattern: Short ON, long OFF, medium ON, medium OFF
+PATTERN:1;CH:1;STATUS:1,0,1,0;TIME_MS:1000,3000,2000,2000;REPEATS:10;PULSE:T0pw0,T0pw0,T0pw0,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 2: Pulse Intensity Ramp
+# ----------------------------------------------------------------------------
+# Pattern: Low intensity → medium → high → off
+PATTERN:1;CH:2;STATUS:1,1,1,0;TIME_MS:3000,3000,3000,3000;REPEATS:5;PULSE:T1000pw100,T1000pw300,T1000pw500,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 3: Heartbeat Pattern
+# ----------------------------------------------------------------------------
+# Pattern: Quick pulse, short pause, quick pulse, long rest
+PATTERN:1;CH:3;STATUS:1,0,1,0;TIME_MS:200,200,200,2400;REPEATS:20;PULSE:T100pw50,T0pw0,T100pw50,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 4: Variable Frequency
+# ----------------------------------------------------------------------------
+# Pattern: 1Hz → 2Hz → 5Hz → 10Hz
+PATTERN:1;CH:4;STATUS:1,1,1,1;TIME_MS:4000,4000,4000,4000;REPEATS:3;PULSE:T1000pw100,T500pw50,T200pw20,T100pw10
+
+# ============================================================================
+# START TIME CONFIGURATION
+# ============================================================================
+START_TIME: {
+    'CH1': 0,
+    'CH2': 5,
+    'CH3': 10,
+    'CH4': 15
+}
+
+# ============================================================================
+# WAIT STATUS CONFIGURATION
+# ============================================================================
+WAIT_STATUS: {
+    'CH1': 0,
+    'CH2': 0,
+    'CH3': 0,
+    'CH4': 1
+}
+
+# ============================================================================
+# WAIT PULSE CONFIGURATION
+# ============================================================================
+WAIT_PULSE: {
+    'CH4': {'frequency': 0.2, 'pulse_width': 200},
+}
+
+# ============================================================================
+# NOTE: AUTOMATIC CALIBRATION ENABLED
+# ============================================================================
+# This protocol does NOT include CALIBRATION_FACTOR - it uses automatic
+# calibration based on Arduino board identification.
+#
+# FIRST RUN WORKFLOW:
+#   1. Connect Arduino to specified port
+#   2. System identifies board by serial number/VID/PID
+#   3. If not calibrated before, prompts: "Calibrate now? (Y/n)"
+#   4. Choose calibration method (default: v2_improved, 300s)
+#   5. Calibration saved to database automatically
+#   6. Protocol execution begins with calibrated timing
+#
+# SUBSEQUENT RUNS:
+#   - Calibration loaded automatically from database
+#   - No prompts or manual input needed
+#   - Works even if Arduino is plugged into different USB port
+#
+# MANAGEMENT:
+#   View calibrations: python utils/manage_calibrations.py list
+#   Recalibrate: python protocol_parser.py 4 <port> --calibrate
+#   Board info: python test_board_info.py
+#
+# See docs/AUTO_CALIBRATION_DATABASE.md for complete documentation.
+# ============================================================================

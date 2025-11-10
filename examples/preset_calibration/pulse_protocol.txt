@@ -1,0 +1,127 @@
+# ===================================================================================
+# PULSE PROTOCOL EXAMPLE (pattern_length=2)
+# ===================================================================================
+# Demonstrates pulsing patterns with 2-element pattern structure (default)
+# Best practice: Use pattern_length=2 for ON/OFF alternating patterns
+# 
+# PULSE FORMAT: T[period_ms]pw[pulse_width_ms]
+# - Period = 1000 / frequency_hz
+# - Example: T1000pw100 = 1Hz pulse, 100ms ON
+#
+# USAGE: python protocol_parser.py 2  (or just: python protocol_parser.py)
+# ===================================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL 1: Progressive Pulse Speed (Slow to Fast)
+# ----------------------------------------------------------------------------
+# Pattern 1: Very slow pulse (5s period) for 30s, then OFF for 5s, repeat 2x
+# Element 1: LED ON with very slow pulse (0.2 Hz, 6 complete cycles)
+# Element 2: LED OFF for rest period
+PATTERN:1;CH:1;STATUS:1,0;TIME_MS:30000,5000;REPEATS:2;PULSE:T5000pw500,T0pw0
+
+# Pattern 2: Slow pulse (3s period) for 30s, then OFF for 5s, repeat 2x
+# Element 1: LED ON with slow pulse (0.33 Hz, 10 complete cycles)
+# Element 2: LED OFF for rest period
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:30000,5000;REPEATS:2;PULSE:T3000pw300,T0pw0
+
+# Pattern 3: Medium pulse (2s period) for 20s, then OFF for 5s, repeat 3x
+# Element 1: LED ON with medium pulse (0.5 Hz, 10 complete cycles)
+# Element 2: LED OFF for rest period
+PATTERN:3;CH:1;STATUS:1,0;TIME_MS:20000,5000;REPEATS:3;PULSE:T2000pw200,T0pw0
+
+# Pattern 4: Fast pulse (1s period) for 20s, then OFF for 5s, repeat 3x
+# Element 1: LED ON with fast pulse (1 Hz)
+# Element 2: LED OFF for rest period
+PATTERN:4;CH:1;STATUS:1,0;TIME_MS:20000,5000;REPEATS:3;PULSE:T1000pw100,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 2: Flash Effects (Pulse ON, then steady OFF)
+# ----------------------------------------------------------------------------
+# Pattern 1: Rapid flash at 0.5Hz for 10s, then steady OFF for 10s, repeat 5x
+# Element 1: LED ON with 2s period flash
+# Element 2: LED OFF steady
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:10000,10000;REPEATS:5;PULSE:T2000pw50,T0pw0
+
+# Pattern 2: Medium flash at 1Hz for 10s, then steady OFF for 10s, repeat 5x
+# Element 1: LED ON with 1s period flash
+# Element 2: LED OFF steady
+PATTERN:2;CH:2;STATUS:1,0;TIME_MS:10000,10000;REPEATS:5;PULSE:T1000pw50,T0pw0
+
+# Pattern 3: Fast flash at 2Hz for 10s, then steady OFF for 10s, repeat 5x
+# Element 1: LED ON with 500ms period flash
+# Element 2: LED OFF steady
+PATTERN:3;CH:2;STATUS:1,0;TIME_MS:10000,10000;REPEATS:5;PULSE:T500pw50,T0pw0
+
+# Pattern 4: Very fast flash at 5Hz for 10s, then steady OFF for 10s, repeat 5x
+# Element 1: LED ON with 200ms period flash
+# Element 2: LED OFF steady
+PATTERN:4;CH:2;STATUS:1,0;TIME_MS:10000,10000;REPEATS:5;PULSE:T200pw20,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 3: Alternating Pulse and Rest
+# ----------------------------------------------------------------------------
+# Pattern 1: OFF for 15s, then ON (no pulse) for 15s, repeat 4x
+# Element 1: LED OFF steady
+# Element 2: LED ON steady (no pulse)
+PATTERN:1;CH:3;STATUS:0,1;TIME_MS:15000,15000;REPEATS:4;PULSE:T0pw0,T0pw0
+
+# Pattern 2: Slow pulse (2s) for 20s, then OFF for 10s, repeat 3x
+# Element 1: LED ON with slow pulse
+# Element 2: LED OFF
+PATTERN:2;CH:3;STATUS:1,0;TIME_MS:20000,10000;REPEATS:3;PULSE:T2000pw200,T0pw0
+
+# Pattern 3: OFF for 10s, then fast pulse (500ms) for 20s, repeat 3x
+# Element 1: LED OFF
+# Element 2: LED ON with fast pulse
+PATTERN:3;CH:3;STATUS:0,1;TIME_MS:10000,20000;REPEATS:3;PULSE:T0pw0,T500pw100
+
+# ----------------------------------------------------------------------------
+# START TIME CONFIGURATION
+# ----------------------------------------------------------------------------
+START_TIME: {'CH1': 30, 'CH2': '21:00:00', 'CH3': 60}
+
+# ----------------------------------------------------------------------------
+# WAIT STATUS CONFIGURATION
+# ----------------------------------------------------------------------------
+WAIT_STATUS: {'CH1': 1, 'CH2': 1, 'CH3': 1}
+
+# ----------------------------------------------------------------------------
+# WAIT PULSE CONFIGURATION
+# ----------------------------------------------------------------------------
+WAIT_PULSE: {
+    'CH1': {'frequency': 0.2, 'pulse_width': 100},
+    'CH2': {'frequency': 1.0, 'pulse_width': 50},
+    'CH3': {'frequency': 0.5, 'pulse_width': 150}
+}
+
+# ----------------------------------------------------------------------------
+# CALIBRATION
+# ----------------------------------------------------------------------------
+CALIBRATION_FACTOR: 1.000000
+
+# ===================================================================================
+# PATTERN STRUCTURE EXPLANATION (pattern_length=2)
+# ===================================================================================
+# 
+# Each pattern has 2 elements:
+#   Element 1: First state (ON with pulse, or OFF)
+#   Element 2: Second state (OFF, or ON with different pulse)
+#
+# Why pattern_length=2?
+# ✓ Natural ON/OFF alternation
+# ✓ Most common pattern structure
+# ✓ Minimal Arduino memory usage (32 bytes per pattern)
+# ✓ Clear and simple to understand
+#
+# Old format (pattern_length=1):
+#   PATTERN:1;CH:1;STATUS:1;TIME_MS:30000;REPEATS:1;PULSE:T50000pw500
+#   - Single element, no alternation
+#   - Requires separate patterns for ON and OFF
+#   - Less efficient compression
+#
+# New format (pattern_length=2):
+#   PATTERN:1;CH:1;STATUS:1,0;TIME_MS:30000,5000;REPEATS:2;PULSE:T50000pw500,T0pw0
+#   - Two elements: ON (with pulse), OFF (rest)
+#   - Captures complete ON/OFF cycle
+#   - Better compression (2x fewer patterns needed)
+# ===================================================================================

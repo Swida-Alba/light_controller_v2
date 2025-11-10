@@ -1,0 +1,89 @@
+# ============================================================================
+# PULSE PROTOCOL EXAMPLE - AUTOMATIC CALIBRATION
+# ============================================================================
+# This example demonstrates automatic calibration for pulsed light patterns.
+# No manual CALIBRATION_FACTOR needed - the system automatically manages
+# calibration per Arduino board using a persistent database.
+#
+# AUTOMATIC CALIBRATION BENEFITS:
+#   - Board identification via serial number/VID/PID
+#   - One-time calibration per Arduino (stored in database)
+#   - Seamless multi-board support without manual tracking
+#   - Reduces setup errors and simplifies workflow
+#
+# USAGE: python protocol_parser.py 4 <port>
+#        Example: python protocol_parser.py 4 /dev/cu.usbmodem14301
+#
+# PULSE SYNTAX:
+#   T[period]pw[width] where:
+#   - T[period]: Period in milliseconds (1000/period = frequency in Hz)
+#   - pw[width]: Pulse width in milliseconds (ON time within each period)
+#   - T0pw0: No pulse (solid state)
+#
+# Examples:
+#   T1000pw100: 1Hz pulse, 100ms ON, 900ms OFF (10% duty cycle)
+#   T500pw250:  2Hz pulse, 250ms ON, 250ms OFF (50% duty cycle)
+#   T100pw10:   10Hz pulse, 10ms ON, 90ms OFF (10% duty cycle)
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CHANNEL 1: Slow Pulse (1Hz)
+# ----------------------------------------------------------------------------
+PATTERN:1;CH:1;STATUS:1,1,1,0;TIME_MS:5000,5000,5000,5000;REPEATS:3;PULSE:T1000pw100,T1000pw200,T1000pw500,T0pw0
+
+# ----------------------------------------------------------------------------
+# CHANNEL 2: Medium Pulse (2Hz)
+# ----------------------------------------------------------------------------
+PATTERN:1;CH:2;STATUS:1,1,0,1;TIME_MS:4000,4000,4000,4000;REPEATS:4;PULSE:T500pw50,T500pw250,T0pw0,T500pw400
+
+# ----------------------------------------------------------------------------
+# CHANNEL 3: Fast Pulse (10Hz)
+# ----------------------------------------------------------------------------
+PATTERN:1;CH:3;STATUS:1,0,1,1;TIME_MS:3000,3000,3000,3000;REPEATS:5;PULSE:T100pw10,T0pw0,T100pw50,T100pw90
+
+# ----------------------------------------------------------------------------
+# CHANNEL 4: Variable Frequency
+# ----------------------------------------------------------------------------
+PATTERN:1;CH:4;STATUS:1,1,1,0;TIME_MS:2000,2000,2000,4000;REPEATS:6;PULSE:T200pw20,T100pw10,T50pw5,T0pw0
+
+# ============================================================================
+# START TIME CONFIGURATION
+# ============================================================================
+START_TIME: {
+    'CH1': 0,
+    'CH2': 5,
+    'CH3': 10,
+    'CH4': 15
+}
+
+# ============================================================================
+# WAIT STATUS CONFIGURATION
+# ============================================================================
+WAIT_STATUS: {
+    'CH1': 0,
+    'CH2': 0,
+    'CH3': 0,
+    'CH4': 0
+}
+
+# ============================================================================
+# WAIT PULSE CONFIGURATION
+# ============================================================================
+WAIT_PULSE: {
+}
+
+# ============================================================================
+# NOTE: NO CALIBRATION_FACTOR NEEDED
+# ============================================================================
+# This protocol uses automatic calibration based on your Arduino's unique ID.
+#
+# FIRST RUN: You'll be prompted to calibrate (one-time setup)
+# SUBSEQUENT RUNS: Calibration is loaded automatically from database
+#
+# Management commands:
+#   - Recalibrate: python protocol_parser.py 4 <port> --calibrate
+#   - List calibrations: python utils/manage_calibrations.py list
+#   - View board info: python test_board_info.py
+#
+# Documentation: docs/AUTO_CALIBRATION_DATABASE.md
+# ============================================================================
