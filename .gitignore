@@ -26,6 +26,9 @@ wheels/
 *_commands_*.html
 output/
 
+# Calibration cache
+calibration_database.json
+
 # Arduino
 build/
 *.hex
