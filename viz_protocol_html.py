@@ -17,6 +17,23 @@ from datetime import datetime, timedelta
 import re
 
 
+def safe_print(msg='', *args, **kwargs):
+    """Print safely to consoles that can't encode certain Unicode characters.
+
+    Tries a normal print first; on UnicodeEncodeError it encodes using the
+    stdout encoding with 'replace' for unencodable chars and prints that.
+    """
+    try:
+        print(msg, *args, **kwargs)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+        try:
+            b = msg.encode(enc, errors='replace')
+            print(b.decode(enc), *args, **kwargs)
+        except Exception:
+            print(msg.encode('ascii', 'replace').decode('ascii'), *args, **kwargs)
+
+
 def format_time(ms):
     """Convert milliseconds to DD:HH:mm:ss format."""
     total_seconds = int(ms / 1000)
@@ -1353,11 +1370,12 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
 </html>
 """
     
-    with open(output_file, 'w') as f:
+    # Write using UTF-8 to avoid encoding errors on non-UTF consoles
+    with open(output_file, 'w', encoding='utf-8') as f:
         f.write(html)
-    
-    print(f"✅ HTML visualization saved: {output_file}")
-    print(f"🌐 Open in browser: file://{os.path.abspath(output_file)}")
+
+    safe_print(f"HTML visualization saved: {output_file}")
+    safe_print(f"Open in browser: file://{os.path.abspath(output_file)}")
 
 
 def main():
@@ -1391,15 +1409,15 @@ def main():
         sys.exit(1)
     
     # Parse commands
-    print(f"📖 Parsing commands from: {args.commands_file}")
+    print(f"Parsing commands from: {args.commands_file}")
     channels, calib_factor = parse_commands(args.commands_file)
     
     if not channels:
         print("Error: No channels found in commands file")
         sys.exit(1)
     
-    print(f"✅ Found {len(channels)} channels")
-    print(f"📊 Calibration Factor: {calib_factor:.5f}")
+    print(f"Found {len(channels)} channels")
+    print(f"Calibration Factor: {calib_factor:.5f}")
     
     # Parse upload time (or fallback to start_time for backward compatibility)
     upload_time = None
@@ -1413,7 +1431,7 @@ def main():
         # Backward compatibility: treat start_time as upload_time
         try:
             upload_time = datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S')
-            print("⚠️  Note: --start-time is deprecated, use --upload-time instead")
+            print("Note: --start-time is deprecated, use --upload-time instead")
         except ValueError:
             print(f"Error: Invalid start time format. Use: YYYY-MM-DD HH:MM:SS")
             sys.exit(1)
@@ -1436,10 +1454,10 @@ def main():
     
     # Calculate positions
     if upload_time:
-        print(f"⏰ Using upload time: {upload_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Using upload time: {upload_time.strftime('%Y-%m-%d %H:%M:%S')}")
         positions = calculate_current_position(channels, upload_time)
     else:
-        print("⏰ No upload time provided - showing structure only")
+        print("No upload time provided - showing structure only")
         # Create empty positions
         positions = {
             ch: {
@@ -1473,7 +1491,7 @@ def main():
         output_file = os.path.join(output_dir, f"{base}.html")
     
     # Generate HTML
-    print(f"🎨 Generating HTML visualization...")
+    print(f"Generating HTML visualization...")
     generate_html(channels, positions, output_file, upload_time, channel_start_times)
 
 
