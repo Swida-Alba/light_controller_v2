@@ -2153,6 +2153,10 @@ def CorrectTime_df(df_ms, calib_factor):
     return df_corrected
 
 def CorrectTime_dict(remaining_time, calib_factor):
+    # Defensive fallback: if no calibration provided, treat as 1.0
+    if calib_factor is None:
+        print('⚠️ CorrectTime_dict: calib_factor is None; defaulting to 1.0')
+        calib_factor = 1.0
     remaining_time_corrected = dict()
     for ch, t in remaining_time.items():
         remaining_time_corrected[ch] = int(t / calib_factor)
@@ -2836,6 +2840,11 @@ def ApplyCalibrationToTxtCommands(pattern_commands, calib_factor):
     calib_factor: calibration factor to apply
     return -> list of calibrated command strings
     '''
+    # Defensive fallback: if no calibration provided, treat as 1.0
+    if calib_factor is None:
+        print('⚠️ ApplyCalibrationToTxtCommands: calib_factor is None; defaulting to 1.0')
+        calib_factor = 1.0
+
     calibrated_commands = []
     for cmd in pattern_commands:
         # Parse the command to extract TIME_MS values
