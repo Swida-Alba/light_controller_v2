@@ -390,7 +390,23 @@ class LightControllerParser:
             tuple: (pattern_commands, start_time, wait_status, wait_pulse, calib_factor)
         """
         print('Reading TXT protocol file...')
-        cmd_patterns_raw, self.start_time, self.wait_status, self.wait_pulse, self.calib_factor = ReadTxtFile(self.protocol_file)
+        # Read values from file into locals; do not unconditionally overwrite
+        # an existing calibration factor (e.g. one provided by preview_only).
+        cmd_patterns_raw, file_start_time, file_wait_status, file_wait_pulse, file_calib = ReadTxtFile(self.protocol_file)
+
+        # Accept file-provided start/wait/pulse values
+        self.start_time = file_start_time
+        self.wait_status = file_wait_status
+        self.wait_pulse = file_wait_pulse
+
+        # Only use file calibration if explicitly present; otherwise preserve
+        # any existing self.calib_factor (set by preview_only or elsewhere).
+        if file_calib is not None:
+            self.calib_factor = file_calib
+        else:
+            if self.calib_factor is None:
+                # Default to 1.0 (uncalibrated) if nothing has been set
+                self.calib_factor = 1.0
         
         # Check for uncalibrated time and issue warning
         if self.calib_factor is not None and abs(self.calib_factor - 1.0) < 1e-9:

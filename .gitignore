@@ -25,6 +25,7 @@ wheels/
 *_commands_*.txt
 *_commands_*.html
 output/
+protocol/
 
 # Calibration cache
 calibration_database.json

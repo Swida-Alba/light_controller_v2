@@ -122,7 +122,9 @@ def parse_commands(commands_file):
             'pattern': pattern_num,
             'status': status_list,
             'time_ms': time_list,
-            'time_ms_original': [t / calib_factor for t in time_list],  # Store uncalibrated times
+            # Recover requested (python) times from stored Arduino TIME_MS by multiplying
+            # python_time = calib_factor * arduino_time
+            'time_ms_original': [t * calib_factor for t in time_list],
             'repeats': repeats,
             'pulse': pulse_str if has_pulse else None  # Store the actual pulse string, not boolean
         })
@@ -166,24 +168,24 @@ def calculate_current_position(channels, start_time):
             'completed': False
         }
         
-        # Find where we are in the timeline
+        # Find where we are in the timeline - use uncalibrated/original times
         for p_idx, pattern in enumerate(patterns):
-            cycle_duration = sum(pattern['time_ms'])
+            cycle_duration = sum(pattern['time_ms_original'])
             total_duration = cycle_duration * pattern['repeats']
-            
+
             if current_time + total_duration > elapsed:
                 # We're in this pattern
                 position['current_pattern'] = p_idx
                 time_in_pattern = elapsed - current_time
-                
+
                 # Find which cycle
                 cycle_num = int(time_in_pattern / cycle_duration)
                 position['current_cycle'] = cycle_num
-                
+
                 # Find which state within the cycle
                 time_in_cycle = time_in_pattern % cycle_duration
                 state_time = 0
-                for s_idx, state_duration in enumerate(pattern['time_ms']):
+                for s_idx, state_duration in enumerate(pattern['time_ms_original']):
                     if state_time + state_duration > time_in_cycle:
                         position['current_state'] = s_idx
                         position['state_elapsed_ms'] = time_in_cycle - state_time
@@ -192,7 +194,7 @@ def calculate_current_position(channels, start_time):
                         break
                     state_time += state_duration
                 break
-            
+
             current_time += total_duration
         else:
             # Completed all patterns
@@ -639,11 +641,20 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         if channel_start_times:
             html += """
             <div style="margin-top: 10px; font-size: 0.9em; color: #bbb;">
-                <strong>Channel Start Times:</strong><br>
+                <strong>Channel Start → End Times:</strong><br>
 """
             for ch_num in sorted(channel_start_times.keys()):
                 ch_start = channel_start_times[ch_num]
-                html += f"""                CH{ch_num}: {ch_start.strftime('%Y-%m-%d %H:%M:%S')}<br>
+                # Calculate channel total duration excluding any wait pattern (pattern 0)
+                ch_total_ms_excl_wait = 0
+                for p in channels.get(ch_num, []):
+                    if p.get('pattern', None) == 0:
+                        # skip wait pattern when computing end time
+                        continue
+                    ch_total_ms_excl_wait += sum(p['time_ms_original']) * p['repeats']
+
+                ch_end = ch_start + timedelta(milliseconds=ch_total_ms_excl_wait)
+                html += f"""                CH{ch_num}: {ch_start.strftime('%Y-%m-%d %H:%M:%S')} → {ch_end.strftime('%Y-%m-%d %H:%M:%S')}<br>
 """
             html += """
             </div>
@@ -660,9 +671,9 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         initial_led_class = "off"
         if upload_time:
             elapsed_ms = (now - upload_time).total_seconds() * 1000
-            # Quick check if channel is in pattern 0 (waiting)
+            # Quick check if channel is in pattern 0 (waiting) - use uncalibrated/original times
             if len(channels[ch_num]) > 0 and channels[ch_num][0]['pattern'] == 0:
-                pattern_0_duration = sum(channels[ch_num][0]['time_ms']) * channels[ch_num][0]['repeats']
+                pattern_0_duration = sum(channels[ch_num][0]['time_ms_original']) * channels[ch_num][0]['repeats']
                 if elapsed_ms < pattern_0_duration:
                     initial_status = "⏰ WAITING"
                     initial_led_class = "off"
@@ -678,6 +689,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                         <div>Pattern: --</div>
                         <div>Cycle: --</div>
                         <div>Elapsed: --:--:--</div>
+                        <div>Left: <span id="ch{ch_num}_left">--:--:--</span></div>
                     </div>
                 </div>
 """
@@ -703,23 +715,31 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         
         for p_idx, pattern in enumerate(channels[ch_num]):
             # Don't set current class statically - let JavaScript handle it dynamically
-            
-            cycle_duration = sum(pattern['time_ms'])
-            total_duration = cycle_duration * pattern['repeats']
-            
-            # Use original (uncalibrated) times for display
+
+            # Use original (uncalibrated) times for all visualization math
             cycle_duration_orig = sum(pattern['time_ms_original'])
             total_duration_orig = cycle_duration_orig * pattern['repeats']
             
             # Check if this is a wait pattern (pattern 0)
             is_wait_pattern = (pattern['pattern'] == 0)
             
+            # Determine header time display: absolute datetimes if upload_time provided,
+            # otherwise keep relative duration display.
+            if upload_time:
+                pat_start_dt = upload_time + timedelta(milliseconds=current_time_orig)
+                pat_end_dt = pat_start_dt + timedelta(milliseconds=total_duration_orig)
+                start_str = pat_start_dt.strftime('%Y-%m-%d %H:%M:%S')
+                end_str = pat_end_dt.strftime('%Y-%m-%d %H:%M:%S')
+                time_display = f"{start_str} → {end_str}"
+            else:
+                time_display = f"{format_time(current_time_orig)} → {format_time(current_time_orig + total_duration_orig)}"
+
             html += f"""
             <div class="pattern-block">
                 <div class="pattern-header">
                     <div class="pattern-title">Pattern {pattern["pattern"]}</div>
                     <div style="color: #666;">
-                        {format_time(current_time_orig)} → {format_time(current_time_orig + total_duration_orig)}
+                        {time_display}
                     </div>
                 </div>
                 
@@ -739,6 +759,11 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                     <div class="info-item">
                         <span class="info-label">Repeats:</span>
                         <span>{pattern['repeats']}x</span>
+                    </div>
+
+                    <div class="info-item">
+                        <span class="info-label">Pattern Left:</span>
+                        <span id="ch{ch_num}_pat{p_idx}_left">--:--:--</span>
                     </div>
 """
             
@@ -768,9 +793,9 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                         <div class="timeline-bar" id="ch{ch_num}_pat{p_idx}_timeline">
 """
             
-            # Add timeline segments for all patterns
-            for s_idx, (state, duration) in enumerate(zip(pattern['status'], pattern['time_ms'])):
-                width_percent = (duration / cycle_duration) * 100
+            # Add timeline segments for all patterns (use uncalibrated/original durations)
+            for s_idx, (state, duration) in enumerate(zip(pattern['status'], pattern['time_ms_original'])):
+                width_percent = (duration / cycle_duration_orig) * 100
                 
                 if pattern['pulse'] and state == 1:
                     state_class = 'pulsing'
@@ -817,7 +842,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             </div>
 """
             
-            current_time += total_duration
+            current_time += total_duration_orig  # keep current_time in calibrated units unused, but advance by original
             current_time_orig += total_duration_orig
     
     # Close channels container
@@ -884,6 +909,25 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         for (const [ch, timeStr] of Object.entries(channelStartTimesRaw)) {{
             channelStartTimes[ch] = new Date(timeStr);
         }}
+
+        // Precompute per-pattern start offsets and durations for each channel
+        const channelsMeta = {{}};
+        Object.keys(channelsData).forEach(chNum => {{
+            const channel = channelsData[chNum];
+            let offset = 0;
+            const starts = [];
+            const durations = [];
+
+            channel.forEach((p, idx) => {{
+                const cycle = p.time_ms_original.reduce((a, b) => a + b, 0);
+                const dur = cycle * p.repeats;
+                starts.push(offset);
+                durations.push(dur);
+                offset += dur;
+            }});
+
+            channelsMeta[chNum] = {{ starts: starts, durations: durations, total: offset }};
+        }});
         
         // Format milliseconds to DD:HH:mm:ss format
         function formatTime(ms) {{
@@ -983,7 +1027,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             
             for (let pIdx = 0; pIdx < channel.length; pIdx++) {{
                 const pattern = channel[pIdx];
-                const cycleDuration = pattern.time_ms.reduce((a, b) => a + b, 0);
+                const cycleDuration = pattern.time_ms_original.reduce((a, b) => a + b, 0);
                 const patternDuration = cycleDuration * pattern.repeats;
                 
                 if (totalElapsed + patternDuration > elapsedMs) {{
@@ -995,18 +1039,18 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                     // Find current state within cycle
                     let stateElapsed = 0;
                     let currentState = 0;
-                    for (let s = 0; s < pattern.time_ms.length; s++) {{
-                        if (stateElapsed + pattern.time_ms[s] > cycleElapsed) {{
+                    for (let s = 0; s < pattern.time_ms_original.length; s++) {{
+                        if (stateElapsed + pattern.time_ms_original[s] > cycleElapsed) {{
                             currentState = s;
                             break;
                         }}
-                        stateElapsed += pattern.time_ms[s];
+                        stateElapsed += pattern.time_ms_original[s];
                     }}
                     
                     // Calculate position percentage within the entire channel timeline
                     let channelTotalDuration = 0;
                     for (let p = 0; p < channel.length; p++) {{
-                        const pd = channel[p].time_ms.reduce((a, b) => a + b, 0) * channel[p].repeats;
+                        const pd = channel[p].time_ms_original.reduce((a, b) => a + b, 0) * channel[p].repeats;
                         channelTotalDuration += pd;
                     }}
                     const positionPercent = (elapsedMs / channelTotalDuration) * 100;
@@ -1068,6 +1112,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                         led: statusDiv.querySelector('.status-led'),
                         statusText: statusDiv.querySelector('.status-indicator strong'),
                         infoDiv: statusDiv.querySelector('div[style*="font-size"]'),
+                        leftTime: statusDiv.querySelector('#ch' + chNum + '_left'),
                         channelSection: channelSection
                     }};
                 }}
@@ -1143,6 +1188,39 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                         // Pattern 0 (wait pattern) handles the waiting period
                         const channelElapsed = now - uploadTime;
                         const pos = calculatePosition(channel, channelElapsed);
+
+                        // Compute total channel duration and remaining time
+                        const channelTotalDuration = channel.reduce((acc, p) => {{
+                            const cycle = p.time_ms_original.reduce((a, b) => a + b, 0);
+                            return acc + cycle * p.repeats;
+                        }}, 0);
+                        const remainingMs = Math.max(0, channelTotalDuration - pos.elapsed_ms);
+                        if (cached.leftTime) {{
+                            cached.leftTime.textContent = formatTime(remainingMs);
+                        }}
+
+                        // Update per-pattern remaining times for this channel
+                        const meta = channelsMeta[chNum];
+                        if (meta) {{
+                            for (let pi = 0; pi < meta.starts.length; pi++) {{
+                                const startMs = meta.starts[pi];
+                                const dur = meta.durations[pi];
+                                let leftForPattern = 0;
+
+                                if (pos.elapsed_ms < startMs) {{
+                                    leftForPattern = dur;
+                                }} else if (pos.elapsed_ms >= startMs + dur) {{
+                                    leftForPattern = 0;
+                                }} else {{
+                                    leftForPattern = (startMs + dur) - pos.elapsed_ms;
+                                }}
+
+                                const el = document.getElementById('ch' + chNum + '_pat' + pi + '_left');
+                                if (el) {{
+                                    el.textContent = formatTime(leftForPattern);
+                                }}
+                            }}
+                        }}
                         
                         // Update LED and status text
                         if (pos.waiting) {{
@@ -1196,7 +1274,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                 // Calculate protocol elapsed (time since pattern 0 ended for this channel)
                                 let protocolElapsedDisplay = '--:--:--:--';
                                 if (channel[0] && channel[0].pattern === 0) {{
-                                    const pattern0Duration = channel[0].time_ms.reduce((a, b) => a + b, 0) * channel[0].repeats;
+                                    const pattern0Duration = channel[0].time_ms_original.reduce((a, b) => a + b, 0) * channel[0].repeats;
                                     if (pos.elapsed_ms >= pattern0Duration) {{
                                         const protocolElapsed = pos.elapsed_ms - pattern0Duration;
                                         protocolElapsedDisplay = formatTime(protocolElapsed);
@@ -1229,6 +1307,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                     <div>Pattern: ${{pos.current_pattern + 1}}/${{channel.length}}</div>
                                     <div>Cycle: ${{pos.current_cycle + 1}}/${{currentPattern.repeats}}</div>
                                     <div style="color: #fff;">Protocol Elapsed: ${{protocolElapsedDisplay}}</div>
+                                    <div style="font-size: 1.15em; color: #fff; font-weight: bold; margin-top: 6px;">Total Left: ${{formatTime(remainingMs)}}</div>
                                     <div style="color: #bbb; margin-top: 3px;">Starts at: ${{startTimeStr}}</div>
                                     <div style="color: #ff9800; font-weight: bold; margin-top: 3px;">⏱️ Starts in: ${{formatTime(timeToStart)}}</div>
                                     ${{pulseInfo}}
@@ -1266,7 +1345,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                 // Calculate protocol elapsed (time since pattern 0 ended for this channel)
                                 let protocolElapsedDisplay = '--:--:--:--';
                                 if (channel[0] && channel[0].pattern === 0) {{
-                                    const pattern0Duration = channel[0].time_ms.reduce((a, b) => a + b, 0) * channel[0].repeats;
+                                    const pattern0Duration = channel[0].time_ms_original.reduce((a, b) => a + b, 0) * channel[0].repeats;
                                     if (pos.elapsed_ms >= pattern0Duration) {{
                                         const protocolElapsed = pos.elapsed_ms - pattern0Duration;
                                         protocolElapsedDisplay = formatTime(protocolElapsed);
@@ -1280,6 +1359,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                     <div>Pattern: ${{pos.current_pattern + 1}}/${{channel.length}}</div>
                                     <div>Cycle: ${{pos.current_cycle + 1}}/${{currentPattern.repeats}}</div>
                                     <div style="color: #fff;">Protocol Elapsed: ${{protocolElapsedDisplay}}</div>
+                                    <div style="font-size: 1.15em; color: #fff; font-weight: bold; margin-top: 6px;">Total Left: ${{formatTime(remainingMs)}}</div>
                                     ${{pulseInfo}}
                                 `;
                             }}
@@ -1313,7 +1393,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                     // Add new position marker
                                     const timeline = document.getElementById('ch' + chNum + '_pat' + pos.current_pattern + '_timeline');
                                     if (timeline && currentPattern) {{
-                                        const cycleDuration = currentPattern.time_ms.reduce((a, b) => a + b, 0);
+                                        const cycleDuration = currentPattern.time_ms_original.reduce((a, b) => a + b, 0);
                                         const patternElapsed = pos.elapsed_ms - pos.pattern_start_ms;
                                         const cycleElapsed = patternElapsed % cycleDuration;
                                         const percentInCycle = (cycleElapsed / cycleDuration) * 100;
@@ -1346,10 +1426,19 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                             }}
                             
                             if (cached.infoDiv) {{
+                                // Compute total duration for this channel (static display)
+                                let channelTotalDuration = 0;
+                                for (let pIdx = 0; pIdx < channel.length; pIdx++) {{
+                                    const p = channel[pIdx];
+                                    const cycle = p.time_ms_original.reduce((a, b) => a + b, 0);
+                                    channelTotalDuration += cycle * p.repeats;
+                                }}
+
                                 cached.infoDiv.innerHTML = `
                                     <div>Pattern: ${{pos.current_pattern + 1}}/${{channel.length}}</div>
                                     <div>Cycle: ${{pos.current_cycle + 1}}/${{channel[pos.current_pattern].repeats}}</div>
                                     <div>Elapsed: ${{formatTime(0)}}</div>
+                                    <div style="font-size: 1.15em; color: #333; font-weight: bold; margin-top: 6px;">Total Left: ${{formatTime(channelTotalDuration - pos.elapsed_ms)}}</div>
                                 `;
                             }}
                         }}
@@ -1445,7 +1534,7 @@ def main():
             for pattern in patterns:
                 if pattern['pattern'] == 0:
                     # Sum all time_ms in pattern 0
-                    wait_time_ms = sum(pattern['time_ms'])
+                    wait_time_ms = sum(pattern['time_ms_original'])
                     break
             
             # Calculate start time for this channel
@@ -1487,8 +1576,9 @@ def main():
     else:
         # Match the commands file name but change extension to .html
         base = os.path.splitext(os.path.basename(args.commands_file))[0]
-        # Keep the same name with timestamp for easy matching
-        output_file = os.path.join(output_dir, f"{base}.html")
+        # Replace 'commands' with 'monitor' in generated filename
+        base_monitor = base.replace('commands', 'monitor')
+        output_file = os.path.join(output_dir, f"{base_monitor}.html")
     
     # Generate HTML
     print(f"Generating HTML visualization...")
