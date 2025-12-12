@@ -561,30 +561,33 @@ CH1_T_ms       → Values in milliseconds
 
 ### Text Pulse Configuration
 
-**Syntax:** `PULSE:f<freq>pw<width>,f<freq>pw<width>`
+**Syntax:** `PULSE:T<period>pw<width>,T<period>pw<width>`
 
 **Pattern:** One pulse spec per status state, comma-separated
 
+**Format:** `T{period in ms}pw{pulse width in ms}`
+- Period to Frequency: period = 1000 / frequency (e.g., T1000 = 1Hz, T500 = 2Hz)
+
 **Examples:**
 
-**No pulse OFF, pulse ON:**
+**No pulse OFF, pulse ON (1Hz):**
 ```txt
-PATTERN:1;CH:1;STATUS:0,1;TIME_S:10,10;REPEATS:5;PULSE:f0pw0,f1pw50
+PATTERN:1;CH:1;STATUS:0,1;TIME_S:10,10;REPEATS:5;PULSE:T0pw0,T1000pw50
 ```
 
-**Breathing effect:**
+**Breathing effect (0.5Hz):**
 ```txt
-PATTERN:1;CH:1;STATUS:1;TIME_S:60;REPEATS:1;PULSE:f0.5pw200
+PATTERN:1;CH:1;STATUS:1;TIME_S:60;REPEATS:1;PULSE:T2000pw200
 ```
 
-**Fast strobe:**
+**Fast strobe (10Hz):**
 ```txt
-PATTERN:1;CH:1;STATUS:1;TIME_S:10;REPEATS:10;PULSE:f10pw10
+PATTERN:1;CH:1;STATUS:1;TIME_S:10;REPEATS:10;PULSE:T100pw10
 ```
 
-**Different pulses per state:**
+**Different pulses per state (0.5Hz and 2Hz):**
 ```txt
-PATTERN:1;CH:1;STATUS:0,1;TIME_S:5,5;REPEATS:20;PULSE:f0.5pw100,f2pw50
+PATTERN:1;CH:1;STATUS:0,1;TIME_S:5,5;REPEATS:20;PULSE:T2000pw100,T500pw50
 ```
 
 ---

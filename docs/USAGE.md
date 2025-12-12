@@ -392,14 +392,14 @@ python protocol_parser.py
 
 **Protocol (Text):**
 ```txt
-# Test 1: Slow pulse
-PATTERN:1;CH:1;STATUS:1;TIME_S:30;REPEATS:1;PULSE:f0.5pw200
+# Test 1: Slow pulse (0.5 Hz = 2000ms period)
+PATTERN:1;CH:1;STATUS:1;TIME_S:30;REPEATS:1;PULSE:T2000pw200
 
-# Test 2: Medium pulse
-PATTERN:2;CH:1;STATUS:1;TIME_S:30;REPEATS:1;PULSE:f1pw100
+# Test 2: Medium pulse (1 Hz = 1000ms period)
+PATTERN:2;CH:1;STATUS:1;TIME_S:30;REPEATS:1;PULSE:T1000pw100
 
-# Test 3: Fast pulse
-PATTERN:3;CH:1;STATUS:1;TIME_S:30;REPEATS:1;PULSE:f2pw50
+# Test 3: Fast pulse (2 Hz = 500ms period)
+PATTERN:3;CH:1;STATUS:1;TIME_S:30;REPEATS:1;PULSE:T500pw50
 
 # Start immediately
 START_TIME: {'CH1': 5}

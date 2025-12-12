@@ -361,14 +361,14 @@ Sheet: `start_time`
 # Night: 8 hours OFF
 PATTERN:1;CH:1;STATUS:0;TIME_H:8;REPEATS:1
 
-# Dawn: 30 min gradual wake (breathing)
-PATTERN:2;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:f0.5pw200
+# Dawn: 30 min gradual wake (breathing at 0.5Hz = 2000ms period)
+PATTERN:2;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:T2000pw200
 
 # Day: 12 hours solid ON
 PATTERN:3;CH:1;STATUS:1;TIME_H:12;REPEATS:1
 
-# Dusk: 30 min gradual sleep (breathing)
-PATTERN:4;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:f0.5pw200
+# Dusk: 30 min gradual sleep (breathing at 0.5Hz = 2000ms period)
+PATTERN:4;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:T2000pw200
 
 # Evening: 3 hours OFF
 PATTERN:5;CH:1;STATUS:0;TIME_H:3;REPEATS:1
@@ -490,14 +490,14 @@ WAIT_STATUS: {
 # ===============================================
 
 # Red channel: 16 hours ON (dawn simulation + day + dusk)
-# Dawn: 30 min breathing (gradual wake)
-PATTERN:1;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:f0.5pw200
+# Dawn: 30 min breathing (gradual wake at 0.5Hz = 2000ms period)
+PATTERN:1;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:T2000pw200
 
 # Day: 15 hours solid ON
 PATTERN:2;CH:1;STATUS:1;TIME_H:15;REPEATS:1
 
-# Dusk: 30 min breathing (gradual sleep)
-PATTERN:3;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:f0.5pw200
+# Dusk: 30 min breathing (gradual sleep at 0.5Hz = 2000ms period)
+PATTERN:3;CH:1;STATUS:1;TIME_M:30;REPEATS:1;PULSE:T2000pw200
 
 # Night: 8 hours OFF
 PATTERN:4;CH:1;STATUS:0;TIME_H:8;REPEATS:1
@@ -583,8 +583,8 @@ PATTERN:3;CH:1;STATUS:1;TIME_M:30;REPEATS:1
 # Phase 1: OFF during habituation
 PATTERN:1;CH:2;STATUS:0;TIME_M:30;REPEATS:1
 
-# Phase 2: Pulsed stimulus (2 Hz, 10% duty)
-PATTERN:2;CH:2;STATUS:1;TIME_M:15;REPEATS:1;PULSE:f2pw50
+# Phase 2: Pulsed stimulus (2 Hz = 500ms period, 10% duty)
+PATTERN:2;CH:2;STATUS:1;TIME_M:15;REPEATS:1;PULSE:T500pw50
 
 # Phase 3: OFF during recovery
 PATTERN:3;CH:2;STATUS:0;TIME_M:30;REPEATS:1
