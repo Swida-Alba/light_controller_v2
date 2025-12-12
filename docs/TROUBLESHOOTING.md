@@ -265,8 +265,8 @@ Timeout: No response from Arduino
 **Solutions:**
 
 **1. Check baud rate:**
-- Arduino sketch: 115200
-- Python script: 115200
+- Arduino sketch: 9600
+- Python script: 9600
 - Must match exactly
 
 **2. Reset Arduino:**
@@ -283,6 +283,51 @@ Timeout: No response from Arduino
 - Some cables are power-only (no data)
 - Use cable that came with Arduino
 - Try different cable
+
+---
+
+### PULSE Command Truncation
+
+**Symptom:**
+```
+Command "PATTERN:1;CH:1;STATUS:1,0;TIME_MS:5916,5916;REPEATS:10;PULSE:T986pw98,T0pw0;" is not received correctly. 
+Received "Error: Invalid PULSE format 'T98' in command..."
+```
+
+**Cause:**
+Long commands with PULSE parameters may be truncated during serial transmission if:
+- Python doesn't flush the serial buffer before waiting for response
+- Arduino's serial read timeout is too short for long commands
+
+**Solutions:**
+
+**1. Update Arduino firmware (required):**
+Ensure `Serial.setTimeout(2000)` is set in `setup()`:
+```cpp
+void setup() {
+    Serial.begin(9600);
+    Serial.setTimeout(2000);  // Increase timeout for long commands
+    // ... rest of setup
+}
+```
+
+**2. Check Python serial code:**
+Ensure `lcfunc.py` has proper buffer handling in `SendCommand()`:
+```python
+def SendCommand(ser, command, time_out=5):
+    command = str(command).strip()
+    cmd_t = command + '\n'
+    ser.reset_input_buffer()  # Clear any pending input
+    ser.write(cmd_t.encode('utf-8'))
+    ser.flush()  # Ensure all data is sent
+    time.sleep(0.05)  # Small delay for Arduino to receive
+    # ... rest of function
+```
+
+**3. If commands are "offset" by one:**
+If each echo response is from the *previous* command:
+- The serial buffers are out of sync
+- Update to latest `lcfunc.py` with buffer reset
 
 ---
 
@@ -670,9 +715,11 @@ Try: 10-50% duty cycle
 | 1.0           | 100             |
 ```
 
-**Text:**
+**Text (converted to internal format):**
 ```txt
-PULSE:f1pw100
+# In protocol: frequency=1Hz, pulse_width=100ms
+# Becomes: T1000pw100 (period=1000ms=1Hz, pulse_width=100ms)
+PULSE:T1000pw100,T0pw0
 ```
 
 **4. Verify command sent:**
@@ -904,8 +951,8 @@ pip list | grep -E "pandas|pyserial|openpyxl"
    - Results
 
 **Submit on GitHub:**
-- https://github.com/username/light_controller_v2.2/issues
+- https://github.com/Swida-Alba/light_controller_v2/issues
 
 ---
 
-*Last Updated: November 8, 2025*
+*Last Updated: December 12, 2025*

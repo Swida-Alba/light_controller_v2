@@ -2,8 +2,8 @@
 
 A flexible Arduino-based light control system with **native pulsing support**, **pattern compression**, **automatic calibration management**, precise timing control, and pulse frequency modulation.
 
-**Version**: 2.2.1  
-**Last Updated**: November 10, 2025  
+**Version**: 2.2.2  
+**Last Updated**: December 12, 2025  
 **Status**: Production Ready ✅
 
 ---
@@ -74,7 +74,7 @@ pip install -r requirements.txt
 
 ### 2. Upload Arduino Firmware
 
-1. Open `light_controller_v2_arduino/light_controller_v2_arduino.ino` in Arduino IDE
+1. Open `light_controller_v2_2_arduino/light_controller_v2_2_arduino.ino` in Arduino IDE
 2. Configure settings (if needed):
    ```cpp
    const int PATTERN_LENGTH = 2;     // 2, 4, 8, etc. (must match Python)
@@ -408,8 +408,8 @@ light_controller_v2.2/
 │   ├── verify_pattern_length_fix.py
 │   └── README.md
 │
-└── light_controller_v2_arduino/ # Arduino firmware
-    └── light_controller_v2_arduino.ino
+└── light_controller_v2_2_arduino/ # Arduino firmware
+    └── light_controller_v2_2_arduino.ino
 ```
 
 **🆕 New in v2.2.1:**
@@ -451,13 +451,14 @@ light_controller_v2.2/
 
 ## 📊 Project Status
 
-**Version**: 2.2.1  
+**Version**: 2.2.2  
 **Status**: Production Ready ✅  
 **Tested**: Python 3.6-3.13, Arduino Uno/Due/Mega  
 **License**: [MIT](LICENSE)
 
 ### Version History
 
+- **v2.2.2** (Dec 12, 2025) - Improved serial communication reliability for PULSE commands, fixed calibration skip issue
 - **v2.2.1** (Nov 10, 2025) - Automatic calibration system with 3-month expiration, examples reorganization
 - **v2.2.0** (Nov 8, 2025) - Pattern compression, auto-verification, real-time visualization
 - **v2.1.0** (Nov 3, 2025) - Text protocol support, multiple time units

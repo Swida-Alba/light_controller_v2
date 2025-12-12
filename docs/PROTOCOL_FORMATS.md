@@ -970,4 +970,4 @@ git tag -a v1.2 -m "Working pulse configuration"
 
 ---
 
-*Last Updated: November 8, 2025*
+*Last Updated: December 12, 2025*

@@ -2,6 +2,31 @@
 
 All notable changes to the Light Controller v2.2 project.
 
+## [2.2.2] - 2025-12-12
+
+### Fixed - Serial Communication
+- **PULSE Command Truncation**: Fixed issue where long PULSE commands (e.g., `T986pw98,T0pw0`) were being truncated during serial transmission
+- **Serial Buffer Sync**: Added `ser.flush()` after writing commands and `ser.reset_input_buffer()` before each command
+- **Command Timing**: Added 50ms delay after flush to allow Arduino to receive complete commands
+- **Arduino Serial Timeout**: Increased `Serial.setTimeout()` from default 1000ms to 2000ms for longer commands
+
+### Fixed - Calibration System
+- **Calibration Skip Issue**: Fixed bug where calibration was being skipped when database file was deleted
+- **Auto-Calibrate Prompt**: Removed 'n' option from `auto_calibrate_arduino()` - calibration now mandatory when no stored calibration exists
+- **Calibration Trigger**: `calibrate()` now properly triggers when factor equals 1.0 (uncalibrated default)
+
+### Improved - Visualization
+- **Uncalibrated Time Display**: Visualization now shows original Python/requested times instead of calibrated Arduino times
+- **Per-Channel Left Time**: Added remaining time display for each channel in the monitor header
+- **Per-Pattern Left Time**: Added remaining time display for each pattern section
+- **Total Left Time**: Added overall remaining time in header after Upload Time / Elapsed
+- **Channel Time Range**: Added Start → End times for each channel (excluding wait patterns)
+- **Monitor Filename**: Changed output filename from `*_commands_*.html` to `*_monitor_*.html`
+
+### Technical
+- **PULSE Format**: Confirmed format is `T{period}pw{width}` (e.g., `T1000pw50` = 1Hz with 50ms pulse width)
+- **Defensive Null Checks**: Added `calib_factor` None checks in `ApplyCalibrationToTxtCommands()`, `CorrectTime_dict()`, and `parse_txt_protocol()`
+
 ## [2.2.0] - 2025-11-08
 
 ### Added - HTML Visualization System

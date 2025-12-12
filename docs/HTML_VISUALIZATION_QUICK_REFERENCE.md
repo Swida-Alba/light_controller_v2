@@ -184,10 +184,11 @@ DC: 10.0 %
 ```
 protocol_directory/
 ├── my_protocol.txt
-└── my_protocol_commands_20251108233530.html  ← Generated here
+├── my_protocol_commands_20251108233530.txt   ← Command output
+└── my_protocol_monitor_20251108233530.html   ← Visualization (opened in browser)
 ```
 
-**Pattern:** `{protocol}_commands_{timestamp}.html`
+**Pattern:** `{protocol}_monitor_{timestamp}.html`
 
 ---
 

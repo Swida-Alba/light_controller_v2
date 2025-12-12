@@ -529,4 +529,4 @@ Have an idea? [Open an issue](https://github.com/Swida-Alba/light_controller_v2/
 
 ---
 
-*Last Updated: November 8, 2025*
+*Last Updated: December 12, 2025*

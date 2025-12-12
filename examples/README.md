@@ -557,6 +557,6 @@ python ../protocol_parser.py 4  # For pattern_length_4 examples
 
 ---
 
-**Last Updated:** November 8, 2025  
-**Examples Version:** 2.0  
+**Last Updated:** December 12, 2025  
+**Examples Version:** 2.1  
 **Compatible with:** Light Controller v2.2+

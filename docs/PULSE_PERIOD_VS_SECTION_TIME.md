@@ -296,8 +296,8 @@ duty_cycle = (500 / 5000) * 100  # = 10%
 
 **Related Documentation**:
 - [Pattern Compression Guide](PATTERN_COMPRESSION_GUIDE.md) - Pattern structure and logic
-- [Protocol Guide](PROTOCOL.md) - Command format and parameters
+- [Protocol Formats](PROTOCOL_FORMATS.md) - Command format and parameters
 - [Arduino Pattern Safety](ARDUINO_PATTERN_LENGTH_FIX.md) - Pattern length handling
 
-**Last Updated**: November 8, 2025  
-**Version**: v2.2.0
+**Last Updated**: December 12, 2025  
+**Version**: v2.2.2

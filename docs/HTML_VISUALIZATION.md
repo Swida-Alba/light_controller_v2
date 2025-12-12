@@ -41,13 +41,13 @@ python protocol_parser.py
 
 **Generated File Location:**
 ```
-{protocol_directory}/{protocol}_commands_{timestamp}.html
+{protocol_directory}/{protocol}_monitor_{timestamp}.html
 ```
 
 Example:
 ```
 examples/my_protocol.txt
-examples/my_protocol_commands_20251108233530.html  ← Auto-generated
+examples/my_protocol_monitor_20251108233530.html  ← Auto-generated
 ```
 
 ---
@@ -619,6 +619,6 @@ python viz_protocol_html.py examples/pattern_length_4_example.txt -u "2025-11-08
 
 ---
 
-**Last Updated:** November 8, 2025  
-**Version:** 2.2.0  
+**Last Updated:** December 12, 2025  
+**Version:** 2.2.2  
 **Status:** ✅ Production Ready
