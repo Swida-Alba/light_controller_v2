@@ -347,7 +347,17 @@ class LightControllerParser:
             parser = LightControllerParser('protocol.xlsx', calibration_method='v1.1')
             factor = parser.calibrate()
         """
-        if self.calib_factor is None:
+        # Run calibration if:
+        # - calib_factor is None (not set)
+        # - calib_factor is 1.0 (uncalibrated default)
+        # - force_recalibrate is True
+        needs_calibration = (
+            self.calib_factor is None or 
+            abs(self.calib_factor - 1.0) < 1e-9 or  # calib_factor == 1.0 (uncalibrated)
+            force_recalibrate
+        )
+        
+        if needs_calibration:
             from lcfunc import auto_calibrate_arduino
             
             # Determine which method to use

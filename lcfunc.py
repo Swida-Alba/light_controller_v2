@@ -1289,7 +1289,16 @@ def CountDown(start_time):
 def SendCommand(ser, command, time_out=5):
     command = str(command).strip()
     cmd_t = command + '\n'
+    
+    # Clear any pending input before sending
+    ser.reset_input_buffer()
+    
     ser.write(cmd_t.encode('utf-8'))
+    ser.flush()  # Ensure all data is sent before waiting for response
+    
+    # Small delay to allow Arduino to receive and process the complete command
+    time.sleep(0.05)
+    
     t_cmd = time.time()
     while True:
         if ser.inWaiting() > 0:
@@ -2105,18 +2114,24 @@ def auto_calibrate_arduino(ser, method='v2', force_recalibrate=False, db_path='c
     
     if existing_calib and not force_recalibrate:
         # Valid calibration found (< 90 days old)
-        response = input('\nUse existing calibration? (Y/n/recalibrate): ').strip().lower()
+        response = input('\nUse existing calibration? (Y/recalibrate) [Y]: ').strip().lower()
         
         if response == 'recalibrate' or response == 'r':
             print('\nPerforming new calibration...')
             existing_calib = None
-        elif response == 'n' or response == 'no':
-            print('\nCalibration skipped. Using default factor 1.0')
-            return 1.0, {'calib_factor': 1.0, 'method': 'default'}
         else:
-            # Use existing
+            # Use existing (default behavior - Enter or 'Y')
             print(f'\n✓ Using stored calibration factor: {existing_calib["calib_factor"]:.6f}')
             return existing_calib['calib_factor'], existing_calib
+    else:
+        # No calibration found or expired - inform user
+        if not force_recalibrate:
+            print(f'\n{"="*70}')
+            print(f'⚠️  No valid calibration found for this Arduino')
+            print(f'{"="*70}')
+            print(f'A new calibration will be performed and saved.')
+            print(f'This takes about 5 minutes but only needs to be done once.')
+            print(f'{"="*70}\n')
     
     # Perform new calibration (expired, doesn't exist, or force_recalibrate=True)
     print(f'\n{"="*70}')
