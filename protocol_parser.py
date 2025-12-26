@@ -22,35 +22,42 @@ if __name__ == '__main__':
     
     try:
         # Parse command line arguments
-        # Usage: python protocol_parser.py [pattern_length] [port] [protocol_file]
+        # Usage: python protocol_parser.py [pattern_length] [port] [protocol_file] [--monitor]
         pattern_length = 2  # Default value
         port = None
         protocol_file = None
+        monitor_mode = '--monitor' in sys.argv
         
-        if len(sys.argv) > 1:
+        # Remove --monitor from argv for positional argument parsing
+        args = [a for a in sys.argv if a != '--monitor']
+        
+        if len(args) > 1:
             try:
-                pattern_length = int(sys.argv[1])
+                pattern_length = int(args[1])
                 print(f'Using pattern_length: {pattern_length}')
             except ValueError:
-                print(f'Error: Invalid pattern_length "{sys.argv[1]}". Must be an integer.')
-                print('Usage: python protocol_parser.py [pattern_length] [port] [protocol_file]')
-                print('Example: python protocol_parser.py 2 /dev/cu.usbmodem1101 protocol.txt')
+                print(f'Error: Invalid pattern_length "{args[1]}". Must be an integer.')
+                print('Usage: python protocol_parser.py [pattern_length] [port] [protocol_file] [--monitor]')
+                print('Example: python protocol_parser.py 2 /dev/cu.usbmodem1101 protocol.txt --monitor')
                 sys.exit(1)
         else:
             print(f'Using default pattern_length: {pattern_length}')
         
         # Get port from command line if provided
-        if len(sys.argv) > 2:
-            port = sys.argv[2]
+        if len(args) > 2:
+            port = args[2]
             print(f'Using port: {port}')
         
         # Get protocol file from command line if provided
-        if len(sys.argv) > 3:
-            protocol_file = sys.argv[3]
+        if len(args) > 3:
+            protocol_file = args[3]
             if not os.path.exists(protocol_file):
                 print(f'Error: Protocol file not found: {protocol_file}')
                 sys.exit(1)
             print(f'Using protocol file: {protocol_file}')
+        
+        if monitor_mode:
+            print('Monitor mode: ENABLED (will capture $CHMON data after execution)')
         
         # If no protocol file provided, use file dialog
         if not protocol_file:
@@ -129,7 +136,7 @@ if __name__ == '__main__':
                 print('='*70)
                 
                 # Optional: Monitor serial output for $CHMON messages
-                if len(sys.argv) > 4 and sys.argv[4] == '--monitor':
+                if monitor_mode:
                     # Send Bye command to start execution (but don't close connection)
                     from lcfunc import SayBye
                     SayBye(parser.ser)

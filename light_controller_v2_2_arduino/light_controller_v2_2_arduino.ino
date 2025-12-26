@@ -154,7 +154,7 @@ unsigned long lastRampUpdate[MAX_CHANNEL_NUM] = {0};   //* Last PWM update time 
 //* =====================================================================
 
 unsigned long lastMonitorPrintTime = 0;
-unsigned long monitorPrintStep = 100;  //* Print interval in milliseconds (default 100ms)
+unsigned long monitorPrintStep = 1000;  //* Print interval in milliseconds (default 1000ms)
 
 //* Function prototypes
 void initChannelMonitor(unsigned long print_step_ms);

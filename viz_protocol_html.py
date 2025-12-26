@@ -45,6 +45,38 @@ def format_time(ms):
     return f"{days:02d}:{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
+def format_pattern_states(pattern):
+    """Format pattern states for display, handling RAMP patterns specially."""
+    if pattern.get('is_ramp') and pattern.get('ramp_segments'):
+        # Show RAMP segment info: mode:start→end
+        segments = pattern['ramp_segments']
+        parts = []
+        for seg in segments:
+            mode = seg.get('mode', 'L')
+            start = seg.get('start_pwm', seg.get('start', 0))
+            end = seg.get('end_pwm', seg.get('end', 255))
+            parts.append(f"{mode}:{start}→{end}")
+        return ', '.join(parts)
+    else:
+        # Regular STATUS pattern - show PWM values
+        return str(pattern.get('status', []))
+
+
+def format_pattern_times(pattern):
+    """Format pattern times for display, handling RAMP patterns specially."""
+    if pattern.get('is_ramp') and pattern.get('ramp_segments'):
+        # Show RAMP segment durations
+        segments = pattern['ramp_segments']
+        times = []
+        for seg in segments:
+            duration = seg.get('duration_ms', seg.get('duration', 0))
+            times.append(format_time(duration))
+        return times
+    else:
+        # Regular STATUS pattern
+        return [format_time(t) for t in pattern.get('time_ms_original', [])]
+
+
 def format_section_time(ms):
     """Format time dynamically based on duration:
     - HH:mm:SS.sss if >= 1 hour
@@ -959,12 +991,12 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                         <span>{format_time(total_duration_orig)}</span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">States:</span>
-                        <span>{pattern['status']}</span>
+                        <span class="info-label">{'RAMP:' if pattern.get('is_ramp') else 'States:'}</span>
+                        <span>{format_pattern_states(pattern)}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Times:</span>
-                        <span>{[format_time(t) for t in pattern['time_ms_original']]}</span>
+                        <span>{format_pattern_times(pattern)}</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Repeats:</span>
@@ -1004,24 +1036,63 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
 """
             
             # Add timeline segments for all patterns (use uncalibrated/original durations)
-            for s_idx, (state, duration) in enumerate(zip(pattern['status'], pattern['time_ms_original'])):
-                # Avoid division by zero for RAMP patterns with empty time_ms_original
-                if cycle_duration_orig > 0:
-                    width_percent = (duration / cycle_duration_orig) * 100
-                else:
-                    width_percent = 100  # Single segment takes full width
-                
-                if pattern['pulse'] and state == 1:
-                    state_class = 'pulsing'
-                    state_text = '≈'
-                elif state == 1:
-                    state_class = 'on'
-                    state_text = '█'
-                else:
-                    state_class = 'off'
-                    state_text = '░'
-                
-                html += f"""
+            if pattern.get('is_ramp') and pattern.get('ramp_segments'):
+                # RAMP pattern - show gradient segments
+                ramp_total = pattern.get('ramp_total_duration', 0) or sum(seg.get('duration_ms', seg.get('duration', 1000)) for seg in pattern['ramp_segments'])
+                for s_idx, seg in enumerate(pattern['ramp_segments']):
+                    duration = seg.get('duration_ms', seg.get('duration', 1000))
+                    start_pwm = seg.get('start_pwm', seg.get('start', 0))
+                    end_pwm = seg.get('end_pwm', seg.get('end', 255))
+                    mode = seg.get('mode', 'L')
+                    
+                    width_percent = (duration / ramp_total * 100) if ramp_total > 0 else 100
+                    
+                    # Create gradient color based on PWM values (0=dark, 255=bright green)
+                    start_brightness = int(50 + (start_pwm / 255) * 150)  # 50-200
+                    end_brightness = int(50 + (end_pwm / 255) * 150)
+                    
+                    html += f'''
+                            <div class="timeline-segment" style="width: {width_percent}%; 
+                                background: linear-gradient(90deg, rgb({start_brightness}, {start_brightness + 50}, {start_brightness//2}) 0%, rgb({end_brightness}, {end_brightness + 50}, {end_brightness//2}) 100%);
+                                border: 1px solid #4CAF50;" title="{mode}: {start_pwm}→{end_pwm}">
+                                <span style="font-size:10px; color:#fff; text-shadow: 1px 1px 1px #000;">{mode}</span>
+                            </div>
+'''
+            else:
+                for s_idx, (state, duration) in enumerate(zip(pattern['status'], pattern['time_ms_original'])):
+                    # Avoid division by zero for RAMP patterns with empty time_ms_original
+                    if cycle_duration_orig > 0:
+                        width_percent = (duration / cycle_duration_orig) * 100
+                    else:
+                        width_percent = 100  # Single segment takes full width
+                    
+                    if pattern['pulse'] and state == 1:
+                        state_class = 'pulsing'
+                        state_text = '≈'
+                    elif state == 1 or state == 255:
+                        state_class = 'on'
+                        state_text = '█'
+                    elif state == 0:
+                        state_class = 'off'
+                        state_text = '░'
+                    else:
+                        # PWM value between 0-255
+                        brightness = int(50 + (state / 255) * 150)
+                        state_class = 'pwm'
+                        state_text = str(state)
+                    
+                    # Handle PWM states with inline style
+                    if state not in [0, 1, 255]:
+                        brightness = int(50 + (state / 255) * 150)
+                        html += f'''
+                            <div class="timeline-segment" style="width: {width_percent}%; 
+                                background: rgb({brightness}, {brightness + 50}, {brightness//2});
+                                border: 1px solid #4CAF50; color: #fff; font-size: 10px; text-shadow: 1px 1px 1px #000;" title="PWM: {state}">
+                                {state_text}
+                            </div>
+'''
+                    else:
+                        html += f"""
                             <div class="timeline-segment {state_class}" style="width: {width_percent}%">
                                 {state_text}
                             </div>

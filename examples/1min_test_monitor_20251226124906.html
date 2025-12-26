@@ -382,17 +382,17 @@
         </div>
         
         <div class="status-panel">
-            <h2>🔴 LIVE STATUS - 2025-12-26 12:49:06</h2>
+            <h2>🔴 LIVE STATUS - 2025-12-26 13:04:17</h2>
 
             <div style="margin-bottom: 15px;">
-                <strong>Upload Time:</strong> 2025-12-26 12:49:06 
-                <strong style="margin-left: 20px;">Elapsed:</strong> 00:00:00:00
+                <strong>Upload Time:</strong> 2025-12-26 13:00:00 
+                <strong style="margin-left: 20px;">Elapsed:</strong> 00:00:04:17
             </div>
 
             <div style="margin-top: 10px; font-size: 0.9em; color: #bbb;">
                 <strong>Channel Start → End Times:</strong><br>
-                CH1: 2025-12-26 12:49:06 → 2025-12-26 12:50:05<br>
-                CH2: 2025-12-26 12:49:06 → 2025-12-26 12:50:05<br>
+                CH1: 2025-12-26 13:00:00 → 2025-12-26 13:00:59<br>
+                CH2: 2025-12-26 13:00:00 → 2025-12-26 13:00:59<br>
 
             </div>
 
@@ -440,7 +440,7 @@
                 <div class="pattern-header">
                     <div class="pattern-title">Pattern 0</div>
                     <div style="color: #666;">
-                        2025-12-26 12:49:06 → 2025-12-26 12:49:06
+                        2025-12-26 13:00:00 → 2025-12-26 13:00:00
                     </div>
                 </div>
                 
@@ -507,7 +507,7 @@
                 <div class="pattern-header">
                     <div class="pattern-title">Pattern 1</div>
                     <div style="color: #666;">
-                        2025-12-26 12:49:06 → 2025-12-26 12:50:05
+                        2025-12-26 13:00:00 → 2025-12-26 13:00:59
                     </div>
                 </div>
                 
@@ -517,12 +517,12 @@
                         <span>00:00:00:59</span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">States:</span>
-                        <span>[0]</span>
+                        <span class="info-label">RAMP:</span>
+                        <span>C:0→255, C:255→0</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Times:</span>
-                        <span>['00:00:00:29']</span>
+                        <span>['00:00:00:15', '00:00:00:15']</span>
                     </div>
                     <div class="info-item">
                         <span class="info-label">Repeats:</span>
@@ -545,8 +545,16 @@
                         </div>
                         <div class="timeline-bar" id="ch1_pat1_timeline">
 
-                            <div class="timeline-segment off" style="width: 100.0%">
-                                ░
+                            <div class="timeline-segment" style="width: 50.0%; 
+                                background: linear-gradient(90deg, rgb(50, 100, 25) 0%, rgb(200, 250, 100) 100%);
+                                border: 1px solid #4CAF50;" title="C: 0→255">
+                                <span style="font-size:10px; color:#fff; text-shadow: 1px 1px 1px #000;">C</span>
+                            </div>
+
+                            <div class="timeline-segment" style="width: 50.0%; 
+                                background: linear-gradient(90deg, rgb(200, 250, 100) 0%, rgb(50, 100, 25) 100%);
+                                border: 1px solid #4CAF50;" title="C: 255→0">
+                                <span style="font-size:10px; color:#fff; text-shadow: 1px 1px 1px #000;">C</span>
                             </div>
 
                         </div>
@@ -586,7 +594,7 @@
                 <div class="pattern-header">
                     <div class="pattern-title">Pattern 0</div>
                     <div style="color: #666;">
-                        2025-12-26 12:49:06 → 2025-12-26 12:49:06
+                        2025-12-26 13:00:00 → 2025-12-26 13:00:00
                     </div>
                 </div>
                 
@@ -653,7 +661,7 @@
                 <div class="pattern-header">
                     <div class="pattern-title">Pattern 1</div>
                     <div style="color: #666;">
-                        2025-12-26 12:49:06 → 2025-12-26 12:50:05
+                        2025-12-26 13:00:00 → 2025-12-26 13:00:59
                     </div>
                 </div>
                 
@@ -691,8 +699,8 @@
                         </div>
                         <div class="timeline-bar" id="ch2_pat1_timeline">
 
-                            <div class="timeline-segment off" style="width: 50.0%">
-                                ░
+                            <div class="timeline-segment on" style="width: 50.0%">
+                                █
                             </div>
 
                             <div class="timeline-segment off" style="width: 50.0%">
@@ -751,18 +759,18 @@
         </div>
         
         <div class="timestamp">
-            Generated: 2025-12-26 12:49:06
+            Generated: 2025-12-26 13:04:17
         </div>
     </div>
     
     <script>
         // Channel data and timing configuration
         const channelsData = {"1": [{"pattern": 0, "status": [0], "time_ms": [0.0], "time_ms_original": [0.0], "repeats": 1, "pulse": null, "is_ramp": false}, {"pattern": 1, "status": [0], "time_ms": [30000], "time_ms_original": [29998.5], "repeats": 2, "pulse": null, "is_ramp": true, "ramp_segments": [{"mode": "C", "start_pwm": 0, "end_pwm": 255, "duration_ms": 15000, "steps": 300, "t_start": 0.0, "t_end": 1.0, "offset_ms": 0}, {"mode": "C", "start_pwm": 255, "end_pwm": 0, "duration_ms": 15000, "steps": 300, "t_start": 0.0, "t_end": 1.0, "offset_ms": 15000}], "ramp_total_duration": 30000}], "2": [{"pattern": 0, "status": [0], "time_ms": [0.0], "time_ms_original": [0.0], "repeats": 1, "pulse": null, "is_ramp": false}, {"pattern": 1, "status": [255, 0], "time_ms": [1000.0, 1000.0], "time_ms_original": [999.95, 999.95], "repeats": 30, "pulse": null, "is_ramp": false}]};
-        const uploadTimeStr = "2025-12-26 12:49:06";
+        const uploadTimeStr = "2025-12-26 13:00:00";
         const uploadTime = uploadTimeStr ? new Date(uploadTimeStr) : null;
         
         // Channel start times (upload_time + wait_time per channel) - for display only
-        const channelStartTimesRaw = {"1": "2025-12-26 12:49:06", "2": "2025-12-26 12:49:06"};
+        const channelStartTimesRaw = {"1": "2025-12-26 13:00:00", "2": "2025-12-26 13:00:00"};
         const channelStartTimes = {};
         for (const [ch, timeStr] of Object.entries(channelStartTimesRaw)) {
             channelStartTimes[ch] = new Date(timeStr);
