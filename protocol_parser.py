@@ -57,14 +57,13 @@ import os
 import subprocess
 from datetime import datetime
 
-# File dialog - use PyQt6, fallback to tkinter
+# File dialog - use tkinter (standard library, always available)
 try:
-    from PyQt6.QtWidgets import QApplication, QFileDialog
-    USE_PYQT = True
-except ImportError:
     import tkinter as tk
     from tkinter import filedialog
-    USE_PYQT = False
+    USE_TKINTER = True
+except ImportError:
+    USE_TKINTER = False
 
 
 # =============================================================================
@@ -152,21 +151,19 @@ if __name__ == '__main__':
         if not protocol_file:
             print('\nPlease select your protocol file...')
             
-            if USE_PYQT:
-                # Use PyQt6 file dialog
-                app = QApplication.instance() or QApplication(sys.argv)
-                protocol_file, _ = QFileDialog.getOpenFileName(
-                    None,
-                    'Select the protocol file',
-                    '',
-                    'Protocol files (*.xlsx *.txt);;Excel files (*.xlsx);;Text files (*.txt);;All files (*)'
-                )
-            else:
-                # Fallback to tkinter
+            if USE_TKINTER:
+                # Use tkinter file dialog (standard library)
+                root = tk.Tk()
+                root.withdraw()  # Hide the root window
                 protocol_file = filedialog.askopenfilename(
                     title='Select the protocol file',
                     filetypes=[('Protocol files', '*.xlsx *.txt'), ('Excel files', '*.xlsx'), ('Text files', '*.txt')]
                 )
+                root.destroy()
+            else:
+                print('Error: No GUI available for file selection.')
+                print('Please provide protocol file as argument.')
+                protocol_file = None
         
         if not protocol_file:
             print('No file selected. Exiting.')
@@ -244,14 +241,15 @@ if __name__ == '__main__':
                     
                     monitor_csv = commands_file.replace('.txt', '_monitored.csv')
                     
-                    # Try to use PyQtGraph real-time plot window
+                    # Try to use matplotlib real-time plot window
                     try:
-                        from realtime_plot import run_realtime_plot, PYQTGRAPH_AVAILABLE
+                        from realtime_plot import run_realtime_plot, MATPLOTLIB_AVAILABLE
                         
-                        if PYQTGRAPH_AVAILABLE:
+                        if MATPLOTLIB_AVAILABLE:
                             print('\n📊 Launching real-time PWM visualization window...')
                             print('   (Close window or press Ctrl+C to stop)\n')
                             
+                            # run_realtime_plot is blocking - it shows the matplotlib window
                             result = run_realtime_plot(
                                 serial_port=parser.ser,
                                 csv_output=monitor_csv,
@@ -259,18 +257,16 @@ if __name__ == '__main__':
                             )
                             
                             if result:
-                                app, window = result
-                                app.exec()  # Run Qt event loop (blocking)
                                 print(f'\n📊 Data saved to: {monitor_csv}')
                             else:
-                                raise ImportError("PyQtGraph not available")
+                                raise ImportError("Matplotlib not available")
                         else:
-                            raise ImportError("PyQtGraph not available")
+                            raise ImportError("Matplotlib not available")
                             
                     except ImportError:
                         # Fallback to text-mode monitoring
                         print('\n📊 Monitoring channel values (text mode)...')
-                        print('   Install pyqtgraph for graphical display: pip install pyqtgraph PyQt6')
+                        print('   Install matplotlib for graphical display: pip install matplotlib')
                         print('   Press Ctrl+C to stop\n')
                         
                         csv_file = open(monitor_csv, 'w')

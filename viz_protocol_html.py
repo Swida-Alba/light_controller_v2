@@ -1130,14 +1130,9 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             current_time += total_duration_orig  # keep current_time in calibrated units unused, but advance by original
             current_time_orig += total_duration_orig
         
-        # Add intensity plot for this channel if it has PWM/RAMP data
-        has_pwm_data = any(
-            (pattern.get('is_ramp') or any(0 < s < 255 for s in pattern['status']))
-            for pattern in channels[ch_num]
-        )
-        
-        if has_pwm_data:
-            html += f"""
+        # Add intensity plot for ALL channels (unified visualization for all patterns)
+        # Show square wave for ON/OFF, smooth ramp for RAMP, constant for PWM
+        html += f"""
             <div class="intensity-plot-container" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px;">
                 <h3 style="margin-bottom: 10px; color: #667eea;">📈 Intensity Timeline</h3>
                 <div id="intensity-plot-ch{ch_num}" style="width: 100%; height: 250px;"></div>
@@ -1785,23 +1780,46 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             const intensities = [];
             let currentTime = 0;
             
-            segments.forEach(seg => {{
-                const numPoints = Math.max(50, Math.floor(seg.duration / 10));
+            segments.forEach((seg, segIndex) => {{
+                const isConstant = (seg.start === seg.end);
+                const isRamp = (seg.mode && seg.mode !== 'L' && !isConstant);
                 
-                for (let i = 0; i <= numPoints; i++) {{
-                    const progress = i / numPoints;
-                    const time = currentTime + progress * seg.duration;
-                    const intensity = calculateEasedValue(
-                        progress,
-                        seg.start,
-                        seg.end,
-                        seg.mode,
-                        seg.t_start,
-                        seg.t_end
-                    );
+                if (isConstant) {{
+                    // Square wave for constant ON/OFF/PWM values
+                    // Add point at start (vertical transition if prev segment was different)
+                    if (segIndex > 0) {{
+                        const prevSeg = segments[segIndex - 1];
+                        if (prevSeg.end !== seg.start) {{
+                            // Add vertical transition point
+                            times.push(currentTime / 1000);
+                            intensities.push(seg.start);
+                        }}
+                    }}
+                    // Start of constant segment
+                    times.push(currentTime / 1000);
+                    intensities.push(seg.start);
+                    // End of constant segment
+                    times.push((currentTime + seg.duration) / 1000);
+                    intensities.push(seg.end);
+                }} else {{
+                    // RAMP or gradient - use smooth interpolation
+                    const numPoints = Math.max(50, Math.floor(seg.duration / 10));
                     
-                    times.push(time / 1000);  // Convert to seconds
-                    intensities.push(intensity);
+                    for (let i = 0; i <= numPoints; i++) {{
+                        const progress = i / numPoints;
+                        const time = currentTime + progress * seg.duration;
+                        const intensity = calculateEasedValue(
+                            progress,
+                            seg.start,
+                            seg.end,
+                            seg.mode,
+                            seg.t_start,
+                            seg.t_end
+                        );
+                        
+                        times.push(time / 1000);  // Convert to seconds
+                        intensities.push(intensity);
+                    }}
                 }}
                 
                 currentTime += seg.duration;

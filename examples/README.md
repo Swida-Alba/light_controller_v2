@@ -8,13 +8,16 @@ This directory contains example protocols demonstrating various features of the 
 examples/
 ├── README.md                      # This file
 ├── QUICK_REFERENCE.md             # Protocol syntax cheat sheet
+├── 1min_test.txt                  # Quick test protocol (1 minute)
+├── 5min_pwm_ramp_demo.txt         # PWM ramp demonstration
 ├── clean_protocol.txt             # Minimal example
 ├── complete_protocol.txt          # Full-featured example
 ├── calibration_method_example.py  # Calibration comparison script
 │
 ├── auto_calibration/              # ✨ Recommended calibration (automatic)
 ├── preset_calibration/            # Legacy calibration (manual)
-└── ramp_easing/                   # 🆕 RAMP & easing mode demos
+├── ramp_easing/                   # 🆕 RAMP & easing mode demos
+└── sample_outputs/                # Pre-generated HTML visualizations
 ```
 
 ---
@@ -23,6 +26,8 @@ examples/
 
 | File | Description |
 |------|-------------|
+| **[1min_test.txt](1min_test.txt)** | Quick 1-minute test protocol |
+| **[5min_pwm_ramp_demo.txt](5min_pwm_ramp_demo.txt)** | 5-minute PWM ramp demonstration |
 | **[clean_protocol.txt](clean_protocol.txt)** | Minimal example - basic patterns only |
 | **[complete_protocol.txt](complete_protocol.txt)** | Full example with all optional parameters documented |
 | **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** | Protocol syntax cheat sheet |
@@ -30,6 +35,10 @@ examples/
 ---
 
 ## 📁 Subfolders
+
+### 📊 [sample_outputs/](sample_outputs/README.md) - Example Visualizations
+
+Pre-generated HTML visualization examples showing what the output looks like.
 
 ### 🎨 [ramp_easing/](ramp_easing/README.md) - RAMP & Easing Modes
 

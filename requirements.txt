@@ -5,10 +5,7 @@ openpyxl
 tk
 plotly>=5.0
 dash>=2.0
-
-# Real-time plotting (optional, for --monitor graphical display)
-pyqtgraph>=0.13
-PyQt6>=6.0
+matplotlib>=3.5
 
 # Development tools
 pyinstaller>=5.0

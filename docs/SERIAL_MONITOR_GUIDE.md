@@ -5,15 +5,15 @@
 The Light Controller provides multiple tools for real-time monitoring of Arduino PWM values during protocol execution:
 
 1. **`--monitor` flag** (integrated with protocol_parser.py) - Recommended for most users
-2. **`realtime_plot.py`** - Standalone PyQtGraph-based visualization
+2. **`realtime_plot.py`** - Standalone matplotlib-based visualization
 3. **`serial_monitor.py`** - Dash-based web visualization
 
 **Features:**
 - 📊 Real-time channel value display with visual bars
-- 📈 Live graphical visualization (PyQtGraph or Plotly)
+- 📈 Live graphical visualization (matplotlib or Plotly)
 - 💾 Automatic CSV logging for data analysis
 - 🔌 Automatic serial port detection
-- ⚡ High-performance rendering (up to 100Hz)
+- ⚡ High-performance rendering (up to 10Hz)
 
 ---
 
@@ -27,7 +27,7 @@ python protocol_parser.py 2 /dev/cu.usbmodem1101 examples/1min_test.txt --monito
 
 This will:
 1. Upload the protocol to Arduino
-2. Open a real-time visualization window (if PyQtGraph installed)
+2. Open a real-time visualization window (if matplotlib installed)
 3. Save all data to a CSV file
 
 The `--monitor` flag can appear anywhere in the command:
@@ -48,7 +48,7 @@ pip install pyserial
 ### Recommended (for graphical visualization)
 
 ```bash
-pip install pyqtgraph PyQt6
+pip install matplotlib
 ```
 
 ### Alternative (for web-based visualization)
@@ -64,8 +64,8 @@ pip install plotly dash
 ### 1. --monitor Flag (Recommended)
 
 Built into `protocol_parser.py`. Automatically:
-- Uses PyQtGraph if available (fast, native window)
-- Falls back to text-mode if PyQtGraph not installed
+- Uses matplotlib if available (portable, cross-platform)
+- Falls back to text-mode if matplotlib not installed
 - Saves data to `*_monitored.csv`
 
 ```bash

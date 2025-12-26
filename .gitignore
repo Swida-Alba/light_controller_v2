@@ -24,8 +24,15 @@ wheels/
 # Now saved at protocol path with matching timestamps
 *_commands_*.txt
 *_commands_*.html
+*_monitor_*.html
+*_monitored.csv
+*_captured.csv
+*_live.csv
 output/
 protocol/
+
+# Local tests folder (for development testing)
+local_tests/
 
 # Calibration cache
 calibration_database.json
