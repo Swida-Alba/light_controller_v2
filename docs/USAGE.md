@@ -1,6 +1,6 @@
 # Usage Guide
 
-Complete guide to using Light Controller V2.2.
+Complete guide to using Light Controller V2.3.
 
 > 📚 **New to the system?** Start with the example files in [`examples/`](../examples/):
 > - Review [`examples/README.md`](../examples/README.md) for a guided tour

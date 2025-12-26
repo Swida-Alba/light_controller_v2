@@ -17,8 +17,460 @@ import hashlib
 
 from collections import defaultdict
 
+# ============================================================================
+# PWM/Intensity Conversion Utilities
+# ============================================================================
+
+def convert_status_to_pwm(value):
+    """
+    Convert a status value to PWM byte (0-255).
+    
+    Supports:
+    - Float 0.0-1.0: Converted to 0-255
+    - Integer 0/1: Legacy binary, converted to 0/255
+    - Integer 0-255: Direct PWM value (pass through)
+    - String 'ramp': Special marker for RAMP patterns
+    
+    Args:
+        value: Status value (float, int, or 'ramp')
+        
+    Returns:
+        int: PWM value 0-255, or 'ramp' string
+    """
+    if isinstance(value, str):
+        if value.lower() == 'ramp':
+            return 'ramp'
+        try:
+            value = float(value)
+        except ValueError:
+            raise ValueError(f"Invalid status value: {value}")
+    
+    if isinstance(value, float):
+        if 0.0 <= value <= 1.0:
+            # Float in range 0-1: convert to 0-255
+            return int(round(value * 255))
+        elif 1.0 < value <= 255.0:
+            # Float > 1 but <= 255: treat as direct PWM
+            return int(round(value))
+        else:
+            raise ValueError(f"Status value {value} out of range. Expected 0.0-1.0 or 0-255")
+    
+    if isinstance(value, (int, np.integer)):
+        if value == 0:
+            return 0
+        elif value == 1:
+            # Legacy binary 1 -> full brightness
+            return 255
+        elif 0 <= value <= 255:
+            return int(value)
+        else:
+            raise ValueError(f"Status value {value} out of range. Expected 0-255")
+    
+    raise ValueError(f"Unsupported status type: {type(value)}")
+
+
+def parse_ramp_specification(ramp_str):
+    """
+    Parse a ramp specification string.
+    
+    Formats supported:
+    - "0.0→1.0" or "0.0->1.0": Start and end as floats (0-1)
+    - "0→255" or "0->255": Start and end as integers (0-255)
+    - "0.5→0.0,100": With explicit step count
+    - "0.5→1.0,100,C": With easing mode (L=linear, C=cosine, I=ease-in, O=ease-out)
+    - "0.5→1.0,100,X,0,3.14": With custom easing (mode X + t_start + t_end)
+    
+    Args:
+        ramp_str: Ramp specification string
+        
+    Returns:
+        dict: {'start_pwm': int, 'end_pwm': int, 'steps': int or None, 
+               'easing': str, 't_start': float, 't_end': float}
+    """
+    import math
+    
+    # Normalize arrow formats
+    ramp_str = ramp_str.replace('→', '->').replace('➔', '->')
+    
+    steps = None
+    easing = 'L'  # Default: linear
+    t_start = 0.0
+    t_end = math.pi
+    
+    if ',' in ramp_str:
+        parts = ramp_str.split(',')
+        ramp_str = parts[0]
+        if len(parts) >= 2:
+            steps = int(parts[1].strip())
+        if len(parts) >= 3:
+            easing = parts[2].strip().upper()
+        if len(parts) >= 5 and easing == 'X':
+            t_start = float(parts[3].strip())
+            t_end = float(parts[4].strip())
+    
+    if '->' not in ramp_str:
+        raise ValueError(f"Invalid ramp format: {ramp_str}. Expected 'start->end' or 'start→end'")
+    
+    start_str, end_str = ramp_str.split('->', 1)
+    start_val = float(start_str.strip())
+    end_val = float(end_str.strip())
+    
+    # Convert to PWM values
+    start_pwm = convert_status_to_pwm(start_val)
+    end_pwm = convert_status_to_pwm(end_val)
+    
+    return {
+        'start_pwm': start_pwm,
+        'end_pwm': end_pwm,
+        'steps': steps,
+        'easing': easing,
+        't_start': t_start,
+        't_end': t_end
+    }
+
+
+# Easing mode constants (must match Arduino definitions)
+# All based on f(t) = (1 - cos(π*t)) / 2 where t ∈ [0, 2]
+EASING_LINEAR = 'L'      # f(t') = t' (no easing, linear interpolation)
+EASING_COSINE = 'C'      # t ∈ [0, 1]: ease-in (slow start, fast end)
+EASING_EASE_IN = 'I'     # t ∈ [0, 1]: ease-in (same as C, slow start)
+EASING_EASE_OUT = 'O'    # t ∈ [1, 2]: ease-out (fast start, slow end)
+EASING_CUSTOM = 'X'      # Custom t range within [0, 2]
+
+
+def calculate_eased_value(progress, start_pwm, end_pwm, easing='L', t_start=0.0, t_end=1.0):
+    """
+    Calculate eased PWM value using f(t) = (1 - cos(π*t)) / 2 with selectable t range.
+    
+    The function f(t) over t ∈ [0, 2]:
+        t=0: f(0) = 0
+        t=1: f(1) = 1 (peak)
+        t=2: f(2) = 0
+    
+    t range selections:
+        [0, 2]: Full ease-in-out cycle (0 → 1 → 0)
+        [0, 1]: Ease-in only (0 → 1), slow start
+        [1, 2]: Ease-out only (1 → 0), slow end
+        [0, 0.5]: Partial ease-in, reaches ~0.5
+        [0.5, 1]: Partial ease-in, accelerating finish
+    
+    Args:
+        progress: 0.0 to 1.0 (elapsed proportion of duration)
+        start_pwm: Starting PWM value (0-255)
+        end_pwm: Ending PWM value (0-255)
+        easing: Easing mode ('L', 'C', 'I', 'O', 'X')
+        t_start: Start of t range (for mode 'X' or all modes)
+        t_end: End of t range (for mode 'X' or all modes)
+        
+    Returns:
+        int: Eased PWM value 0-255
+    """
+    import math
+    
+    if easing == EASING_LINEAR or easing == '0':
+        # Linear: no easing
+        eased_progress = progress
+        
+    elif easing == EASING_COSINE or easing == '1' or easing == EASING_EASE_IN or easing == '2':
+        # C/I mode: t ∈ [0, 1] → ease-in (slow start, fast end)
+        t = progress * 1.0  # t goes 0 to 1
+        eased_progress = (1.0 - math.cos(math.pi * t)) / 2.0
+        
+    elif easing == EASING_EASE_OUT or easing == '3':
+        # O mode: t ∈ [1, 2] → ease-out (fast start, slow end)
+        # Maps progress [0,1] to t [1,2], f(t) goes 1→0, invert for 0→1
+        t = 1.0 + progress * 1.0  # t goes 1 to 2
+        f_t = (1.0 - math.cos(math.pi * t)) / 2.0  # goes 1→0
+        eased_progress = 1.0 - f_t  # invert to get 0→1 with ease-out shape
+        
+    elif easing == EASING_CUSTOM or easing == '4':
+        # X mode: Custom t range [t_start, t_end] within [0, 2]
+        t = t_start + progress * (t_end - t_start)
+        f_start = (1.0 - math.cos(math.pi * t_start)) / 2.0
+        f_end = (1.0 - math.cos(math.pi * t_end)) / 2.0
+        f_current = (1.0 - math.cos(math.pi * t)) / 2.0
+        
+        # Normalize to [0, 1] based on actual function values at endpoints
+        if abs(f_end - f_start) < 0.0001:
+            eased_progress = progress  # Fallback to linear
+        else:
+            eased_progress = (f_current - f_start) / (f_end - f_start)
+    else:
+        eased_progress = progress
+    
+    # Clamp
+    eased_progress = max(0.0, min(1.0, eased_progress))
+    
+    # Calculate PWM
+    pwm = start_pwm + eased_progress * (end_pwm - start_pwm)
+    return int(round(max(0, min(255, pwm))))
+
+
+def generate_ramp_segment_new(easing, start_pwm, end_pwm, duration_ms, steps=None, t_start=None, t_end=None):
+    """
+    Generate a single ramp segment string in new parenthesized format.
+    
+    Format: (<mode>:<start>,<end>,<duration>[,<steps>][|<t_start>,<t_end>])
+    
+    Args:
+        easing: Easing mode ('L', 'C', 'I', 'O', 'X')
+        start_pwm: Starting PWM value (0-255)
+        end_pwm: Ending PWM value (0-255)
+        duration_ms: Segment duration in milliseconds
+        steps: Number of interpolation steps (optional, auto-calculated if None)
+        t_start: Custom t start for mode 'X' (optional)
+        t_end: Custom t end for mode 'X' (optional)
+        
+    Returns:
+        str: Segment string (e.g., "(C:0,255,5000)" or "(X:0,255,5000|0,1)")
+    """
+    if steps is not None:
+        params = f"{start_pwm},{end_pwm},{int(duration_ms)},{steps}"
+    else:
+        params = f"{start_pwm},{end_pwm},{int(duration_ms)}"
+    
+    if easing == EASING_CUSTOM and t_start is not None and t_end is not None:
+        return f"({easing}:{params}|{t_start},{t_end})"
+    else:
+        return f"({easing}:{params})"
+
+
+def generate_ramp_segment(start_pwm, end_pwm, duration_ms, steps=None, easing='L', t_start=None, t_end=None):
+    """
+    Generate a single ramp segment string (legacy format for backward compatibility).
+    
+    Args:
+        start_pwm: Starting PWM value (0-255)
+        end_pwm: Ending PWM value (0-255)
+        duration_ms: Segment duration in milliseconds
+        steps: Number of interpolation steps (default: auto-calculated)
+        easing: Easing mode ('L', 'C', 'I', 'O', 'X')
+        t_start: Custom t start for mode 'X'
+        t_end: Custom t end for mode 'X'
+        
+    Returns:
+        str: Segment string in legacy format
+    """
+    if steps is None:
+        steps = max(10, min(200, int(duration_ms / 50)))
+    
+    if easing == EASING_CUSTOM and t_start is not None and t_end is not None:
+        return f"{start_pwm},{end_pwm},{int(duration_ms)},{steps},{easing}|{t_start},{t_end}"
+    else:
+        return f"{start_pwm},{end_pwm},{int(duration_ms)},{steps},{easing}"
+
+
+def generate_ramp_command(channel_num, pattern_num, start_pwm, end_pwm, duration_ms, 
+                          steps=None, easing='L', t_start=None, t_end=None, repeats=1,
+                          new_format=True):
+    """
+    Generate a single-segment RAMP command string for Arduino.
+    
+    Args:
+        channel_num: Channel number (1-based)
+        pattern_num: Pattern number (0=wait, 1+ = patterns)
+        start_pwm: Starting PWM value (0-255)
+        end_pwm: Ending PWM value (0-255)
+        duration_ms: Ramp duration in milliseconds
+        steps: Number of interpolation steps (optional)
+        easing: Easing mode ('L'=linear, 'C'=cosine, 'I'=ease-in, 'O'=ease-out, 'X'=custom)
+        t_start: Custom t start for mode 'X' (in range 0-2)
+        t_end: Custom t end for mode 'X' (in range 0-2)
+        repeats: Number of times to repeat the ramp
+        new_format: Use new parenthesized format (default True)
+        
+    Returns:
+        str: RAMP command string
+    """
+    if new_format:
+        segment = generate_ramp_segment_new(easing, start_pwm, end_pwm, duration_ms, steps, t_start, t_end)
+    else:
+        segment = generate_ramp_segment(start_pwm, end_pwm, duration_ms, steps, easing, t_start, t_end)
+    
+    cmd = f"PATTERN:{pattern_num};CH:{channel_num};RAMP:{segment};REPEATS:{repeats}\n"
+    return cmd
+
+
+def generate_multi_ramp_command(channel_num, pattern_num, segments, repeats=1, new_format=True):
+    """
+    Generate a multi-segment RAMP command string for Arduino.
+    
+    Args:
+        channel_num: Channel number (1-based)
+        pattern_num: Pattern number (0=wait, 1+ = patterns)
+        segments: List of segment dicts, each with:
+            - easing: Easing mode ('L', 'C', 'I', 'O', 'X')
+            - start_pwm: Starting PWM value (0-255) 
+            - end_pwm: Ending PWM value (0-255)
+            - duration_ms: Segment duration in milliseconds
+            - steps: Number of interpolation steps (optional)
+            - t_start: Custom t start for mode 'X' (optional)
+            - t_end: Custom t end for mode 'X' (optional)
+        repeats: Number of times to repeat the entire ramp sequence
+        new_format: Use new parenthesized format (default True)
+        
+    Returns:
+        str: Multi-segment RAMP command string
+        
+    Example (new format):
+        segments = [
+            {'easing': 'I', 'start_pwm': 0, 'end_pwm': 255, 'duration_ms': 5000},
+            {'easing': 'L', 'start_pwm': 255, 'end_pwm': 255, 'duration_ms': 2000},
+            {'easing': 'O', 'start_pwm': 255, 'end_pwm': 0, 'duration_ms': 5000}
+        ]
+        cmd = generate_multi_ramp_command(1, 1, segments, repeats=3)
+        # Output: PATTERN:1;CH:1;RAMP:(I:0,255,5000),(L:255,255,2000),(O:255,0,5000);REPEATS:3
+    """
+    seg_strs = []
+    for seg in segments:
+        easing = seg.get('easing', 'L')
+        if new_format:
+            seg_str = generate_ramp_segment_new(
+                easing,
+                seg['start_pwm'],
+                seg['end_pwm'],
+                seg['duration_ms'],
+                seg.get('steps'),
+                seg.get('t_start'),
+                seg.get('t_end')
+            )
+        else:
+            seg_str = generate_ramp_segment(
+                seg['start_pwm'],
+                seg['end_pwm'],
+                seg['duration_ms'],
+                seg.get('steps'),
+                easing,
+                seg.get('t_start'),
+                seg.get('t_end')
+            )
+        seg_strs.append(seg_str)
+    
+    if new_format:
+        ramp_str = ','.join(seg_strs)
+    else:
+        ramp_str = '|'.join(seg_strs)
+    
+    cmd = f"PATTERN:{pattern_num};CH:{channel_num};RAMP:{ramp_str};REPEATS:{repeats}\n"
+    return cmd
+
+
+def create_fade_in_out_ramp(channel_num, pattern_num, max_pwm=255, 
+                            fade_in_ms=5000, hold_ms=2000, fade_out_ms=5000,
+                            easing_in='I', easing_out='O', repeats=1, new_format=True):
+    """
+    Create a common fade-in, hold, fade-out ramp pattern.
+    
+    Args:
+        channel_num: Channel number (1-based)
+        pattern_num: Pattern number (0=wait, 1+ = patterns)
+        max_pwm: Maximum brightness (0-255)
+        fade_in_ms: Fade-in duration in milliseconds
+        hold_ms: Hold duration in milliseconds (0 to skip hold)
+        fade_out_ms: Fade-out duration in milliseconds
+        easing_in: Easing for fade-in ('I' recommended for smooth start)
+        easing_out: Easing for fade-out ('O' recommended for smooth end)
+        repeats: Number of times to repeat
+        new_format: Use new parenthesized format
+        
+    Returns:
+        str: Multi-segment RAMP command
+    """
+    segments = [
+        {'easing': easing_in, 'start_pwm': 0, 'end_pwm': max_pwm, 'duration_ms': fade_in_ms}
+    ]
+    
+    if hold_ms > 0:
+        segments.append({
+            'easing': 'L', 'start_pwm': max_pwm, 'end_pwm': max_pwm, 'duration_ms': hold_ms
+        })
+    
+    segments.append({
+        'easing': easing_out, 'start_pwm': max_pwm, 'end_pwm': 0, 'duration_ms': fade_out_ms
+    })
+    
+    return generate_multi_ramp_command(channel_num, pattern_num, segments, repeats, new_format)
+
+
+def create_cosine_wave_ramp(channel_num, pattern_num, min_pwm=0, max_pwm=255,
+                            period_ms=10000, cycles=1, repeats=1, new_format=True):
+    """
+    Create a smooth cosine wave pattern (breathe effect).
+    
+    Uses X mode with t range [0, 2] for full ease-in-out in single segment,
+    which creates natural breathing motion.
+    
+    Args:
+        channel_num: Channel number (1-based)
+        pattern_num: Pattern number
+        min_pwm: Minimum brightness
+        max_pwm: Maximum brightness  
+        period_ms: Full wave period in milliseconds (one complete cycle)
+        cycles: Number of wave cycles per pattern
+        repeats: Number of times to repeat
+        new_format: Use new parenthesized format
+        
+    Returns:
+        str: Multi-segment RAMP command
+    """
+    segments = []
+    
+    for _ in range(cycles):
+        # Full cosine cycle with t ∈ [0, 2] goes min → max → min
+        segments.append({
+            'easing': 'X',
+            'start_pwm': min_pwm,
+            'end_pwm': min_pwm,  # Ends at min (full cycle)
+            'duration_ms': period_ms,
+            't_start': 0.0,
+            't_end': 2.0
+        })
+    
+    return generate_multi_ramp_command(channel_num, pattern_num, segments, repeats, new_format)
+
+
+def create_breathing_ramp(channel_num, pattern_num, min_pwm=0, max_pwm=255,
+                          rise_ms=3000, fall_ms=3000, cycles=1, repeats=1, new_format=True):
+    """
+    Create a breathing effect with separate rise and fall times.
+    
+    Args:
+        channel_num: Channel number (1-based)
+        pattern_num: Pattern number
+        min_pwm: Minimum brightness
+        max_pwm: Maximum brightness
+        rise_ms: Rising duration (ease-in)
+        fall_ms: Falling duration (ease-out)
+        cycles: Number of cycles per pattern
+        repeats: Number of times to repeat
+        new_format: Use new parenthesized format
+        
+    Returns:
+        str: Multi-segment RAMP command
+    """
+    segments = []
+    
+    for _ in range(cycles):
+        # Rise: ease-in from min to max
+        segments.append({
+            'easing': 'C',
+            'start_pwm': min_pwm,
+            'end_pwm': max_pwm,
+            'duration_ms': rise_ms
+        })
+        # Fall: ease-out from max to min
+        segments.append({
+            'easing': 'O',
+            'start_pwm': max_pwm,
+            'end_pwm': min_pwm,
+            'duration_ms': fall_ms
+        })
+    
+    return generate_multi_ramp_command(channel_num, pattern_num, segments, repeats, new_format)
+
+
 # functions
-def SetUpSerialPort(board_type='Arduino Uno', **kwargs):
+def SetUpSerialPort(board_type='Arduino Uno', port=None, **kwargs):
     # modified from LoomingFunc.py
     current_os = platform.system()
     Port = ''
@@ -26,6 +478,27 @@ def SetUpSerialPort(board_type='Arduino Uno', **kwargs):
     port_names = [None]*len(port_list)
     port_num = 0
     ser = ''
+    
+    # If port is explicitly provided, use it directly
+    if port:
+        print(f'\nUsing specified port: {port}')
+        # Verify port exists
+        port_exists = any(p.device == port for p in port_list)
+        if not port_exists:
+            print(f'\033[33mWarning: Port {port} not found in available ports.\033[0m')
+            print('Available ports:')
+            for p in port_list:
+                print(f'  - {p.device}: {p.description}')
+            # Try anyway in case it's a valid path
+        print('\nBuilding serial connection...')
+        try:
+            ser = serial.Serial(port=port, **kwargs)
+            print('Waiting for board initialization...')
+            time.sleep(6)
+            return ser
+        except Exception as e:
+            print(f'\033[31mFailed to connect to {port}: {e}\033[0m')
+            return ''
     
     # Normalize board_type for generic Arduino search
     search_term = 'Arduino' if 'Arduino' in board_type else board_type
@@ -1313,7 +1786,7 @@ def SendCommand(ser, command, time_out=5):
             print(f'\033[31mCommand "{cmd_t.strip()}" is not received correctly. Timeout. Please check the connection.\033[0m')
             break
 
-def SendGreeting(ser, time_out=10, expected_pattern_length=None):
+def SendGreeting(ser, time_out=10, expected_pattern_length=None, expected_max_ramp_segments=None):
     """
     Send greeting to Arduino and parse configuration response.
     
@@ -1321,9 +1794,10 @@ def SendGreeting(ser, time_out=10, expected_pattern_length=None):
         ser: Serial connection object
         time_out: Timeout in seconds
         expected_pattern_length: Expected PATTERN_LENGTH value (for verification)
+        expected_max_ramp_segments: Expected MAX_RAMP_SEGMENTS value (for verification)
         
     Returns:
-        dict: Arduino configuration {'pattern_length': int, 'max_pattern_num': int, 'max_channel_num': int}
+        dict: Arduino configuration {'pattern_length': int, 'max_pattern_num': int, 'max_channel_num': int, ...}
     """
     # Clear any residual data in buffer before greeting (important for Arduino Due)
     ser.reset_input_buffer()
@@ -1384,6 +1858,28 @@ def SendGreeting(ser, time_out=10, expected_pattern_length=None):
                         else:
                             # Perfect match
                             print(f'\033[32m✓ PATTERN_LENGTH verified: {expected_pattern_length}\033[0m')
+                    
+                    # Verify MAX_RAMP_SEGMENTS if specified
+                    if expected_max_ramp_segments is not None and 'max_ramp_segments' in arduino_config:
+                        arduino_seg = arduino_config['max_ramp_segments']
+                        python_seg = expected_max_ramp_segments
+                        
+                        if python_seg > arduino_seg:
+                            # Python needs more segments than Arduino supports - ERROR
+                            raise ValueError(
+                                f'\n\033[31mMAX_RAMP_SEGMENTS MISMATCH!\033[0m\n'
+                                f'  Protocol requires: {python_seg} segments\n'
+                                f'  Arduino supports: {arduino_seg} segments\n'
+                                f'Protocol RAMP command has {python_seg} segments but Arduino only supports {arduino_seg}.\n'
+                                f'Please update Arduino sketch MAX_RAMP_SEGMENTS to at least {python_seg}.'
+                            )
+                        elif python_seg < arduino_seg:
+                            print(f'\033[33m⚠️  MAX_RAMP_SEGMENTS mismatch (safe):\033[0m')
+                            print(f'\033[33m   Protocol uses: {python_seg}\033[0m')
+                            print(f'\033[33m   Arduino supports: {arduino_seg}\033[0m')
+                            print(f'   \033[32m✓ Compatible:\033[0m \033[33mArduino can handle more segments.\033[0m')
+                        else:
+                            print(f'\033[32m✓ MAX_RAMP_SEGMENTS verified: {expected_max_ramp_segments}\033[0m')
                 
                 return arduino_config
                 
@@ -2114,7 +2610,13 @@ def auto_calibrate_arduino(ser, method='v2', force_recalibrate=False, db_path='c
     
     if existing_calib and not force_recalibrate:
         # Valid calibration found (< 90 days old)
-        response = input('\nUse existing calibration? (Y/recalibrate) [Y]: ').strip().lower()
+        # Auto-confirm if running non-interactively (check for stdin availability)
+        import sys
+        if sys.stdin.isatty():
+            response = input('\nUse existing calibration? (Y/recalibrate) [Y]: ').strip().lower()
+        else:
+            response = 'y'  # Auto-confirm in non-interactive mode
+            print('\n[Non-interactive mode: auto-confirming existing calibration]')
         
         if response == 'recalibrate' or response == 'r':
             print('\nPerforming new calibration...')
@@ -2269,10 +2771,17 @@ def FindRepeatedPatterns(df_ms, pattern_length=2):
     
     return compressed_patterns
 
-def GeneratePatternCommands(compressed_patterns):
+def GeneratePatternCommands(compressed_patterns, pwm_mode=True):
     '''
-    Generate string commands from compressed patterns
-    compressed_patterns: Dictionary containing compressed patterns for each channel, generated by FindRepeatedPatterns()
+    Generate string commands from compressed patterns.
+    
+    Args:
+        compressed_patterns: Dictionary containing compressed patterns for each channel, 
+                           generated by FindRepeatedPatterns()
+        pwm_mode: If True, convert status values to PWM (0-255). If False, use binary (0/1).
+    
+    Returns:
+        list: List of command strings
     '''
     commands = []
     for channel_name, patterns in compressed_patterns.items():
@@ -2282,10 +2791,16 @@ def GeneratePatternCommands(compressed_patterns):
             # Check if pattern contains pulse info (tuple of 4 elements) or old format (tuple of 2 elements)
             if len(pattern['pattern'][0]) == 4:
                 # New format with pulse: (status, time, period, pw)
-                status_values = [str(s) for s, t, T, pw in pattern['pattern']]
-                time_values = [str(t) for s, t, T, pw in pattern['pattern']]
+                raw_status = [s for s, t, T, pw in pattern['pattern']]
+                time_values = [str(int(t)) for s, t, T, pw in pattern['pattern']]
                 period_values = [T for s, t, T, pw in pattern['pattern']]
                 pw_values = [pw for s, t, T, pw in pattern['pattern']]
+                
+                # Convert status to PWM values if enabled
+                if pwm_mode:
+                    status_values = [str(convert_status_to_pwm(s)) for s in raw_status]
+                else:
+                    status_values = [str(int(s)) for s in raw_status]
                 
                 # Check if any non-zero pulse values exist (treat None, NaN, and 0 as no pulse)
                 has_pulse = any(
@@ -2304,8 +2819,8 @@ def GeneratePatternCommands(compressed_patterns):
                     pulse_parts = []
                     for period, pw in zip(period_values, pw_values):
                         # Handle None, NaN, and convert to 0
-                        period_val = 0 if (period is None or (isinstance(period, float) and period != period)) else period
-                        pw_val = 0 if pw is None else pw
+                        period_val = 0 if (period is None or (isinstance(period, float) and period != period)) else int(period)
+                        pw_val = 0 if pw is None else int(pw)
                         pulse_parts.append(f"T{period_val}pw{pw_val}")
                     pulse_str = f";PULSE:{','.join(pulse_parts)},"
                 
@@ -2316,9 +2831,16 @@ def GeneratePatternCommands(compressed_patterns):
                 commands.append(cmd_t)
             else:
                 # Old format without pulse: (status, time)
-                status_values = [str(s) for s, t in pattern['pattern']]
-                time_values = [str(t) for s, t in pattern['pattern']]
+                raw_status = [s for s, t in pattern['pattern']]
+                time_values = [str(int(t)) for s, t in pattern['pattern']]
                 repeats = pattern['repeats']
+                
+                # Convert status to PWM values if enabled
+                if pwm_mode:
+                    status_values = [str(convert_status_to_pwm(s)) for s in raw_status]
+                else:
+                    status_values = [str(int(s)) for s in raw_status]
+                
                 # if the status_values are all 0, time_values are all 0, skip
                 if all([s == '0' for s in status_values]) and all([t == '0' for t in time_values]):
                     continue
@@ -2329,19 +2851,23 @@ def GeneratePatternCommands(compressed_patterns):
                 commands.append(cmd_t)
     return commands
 
-def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse=None):
+def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse=None, pwm_mode=True):
     '''
     Generate string commands for waiting for each channel to start.
     Now uses pattern_length=1 format (single state) instead of dummy second state.
     
-    wait_status: Dictionary containing wait status for each channel
-    remaining_time: Dictionary containing remaining time for each channel to start in milliseconds
-    valid_channels: List of valid channel names
-    wait_pulse: Optional dictionary containing pulse parameters for wait period
-                Format: {channel_name: {'period': int, 'pw': int}}
-                Example: {'CH1': {'period': 2000, 'pw': 100}}
-    return -> List of string commands, one for each channel
-    for example: ['PATTERN:0;CH:1;STATUS:1;TIME_MS:1000;REPEATS:1;PULSE:T2000pw100\n', ...]
+    Args:
+        wait_status: Dictionary containing wait status for each channel (0-1 float or 0/1 int)
+        remaining_time: Dictionary containing remaining time for each channel to start in milliseconds
+        valid_channels: List of valid channel names
+        wait_pulse: Optional dictionary containing pulse parameters for wait period
+                    Format: {channel_name: {'period': int, 'pw': int}}
+                    Example: {'CH1': {'period': 2000, 'pw': 100}}
+        pwm_mode: If True, convert status to PWM (0-255). If False, use binary (0/1).
+        
+    Returns:
+        List of string commands, one for each channel
+        Example: ['PATTERN:0;CH:1;STATUS:255;TIME_MS:1000;REPEATS:1;PULSE:T2000pw100\n', ...]
     '''
     commands = []
     for channel_name in valid_channels:
@@ -2350,9 +2876,15 @@ def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse
         if status is None:
             continue
         
+        # Convert status to PWM if enabled
+        if pwm_mode:
+            pwm_status = convert_status_to_pwm(status)
+        else:
+            pwm_status = int(status)
+        
         # Build command with pattern_length=1 (single state)
         cmd_t = \
-            f"PATTERN:0;CH:{channel_num};STATUS:{status};" \
+            f"PATTERN:0;CH:{channel_num};STATUS:{pwm_status};" \
             f"TIME_MS:{remaining_time[channel_name]};REPEATS:1"
         
         # Add PULSE parameter if provided for this channel
@@ -2360,7 +2892,7 @@ def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse
             pulse_info = wait_pulse[channel_name]
             period = pulse_info.get('period', 0)
             pw = pulse_info.get('pw', 0)
-            cmd_t += f";PULSE:T{period}pw{pw},"
+            cmd_t += f";PULSE:T{int(period)}pw{int(pw)},"
         
         cmd_t += "\n"
         commands.append(cmd_t)

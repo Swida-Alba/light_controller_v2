@@ -3,6 +3,8 @@ numpy
 pyserial
 openpyxl
 tk
+plotly>=5.0
+dash>=2.0
 
 # Development tools
 pyinstaller>=5.0

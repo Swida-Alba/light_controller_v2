@@ -1,0 +1,56 @@
+# ===================================================================================
+# 5-MINUTE PWM RAMP DEMO (v2.3.0)
+# ===================================================================================
+# A ~5 minute protocol demonstrating PWM and RAMP features.
+# Designed for testing with serial_monitor.py for real-time visualization.
+# 
+# Total duration: ~5 minutes (300 seconds)
+# Channels used: CH1 and CH2 (Arduino Due pins 11 and 10)
+#
+# Use with:
+#   1. Upload firmware to Arduino Due
+#   2. Run: python protocol_parser.py 2 /dev/cu.usbmodem14301 examples/5min_pwm_ramp_demo.txt
+#   3. In another terminal: python serial_monitor.py --live-plot --port /dev/cu.usbmodem14301
+# ===================================================================================
+
+# ============================================================================
+# CHANNEL 1: RAMP Transitions (60s total)
+# ============================================================================
+# Breathing effect with various easing modes
+# Each RAMP runs for 30 seconds, repeated 2 times = 60s
+
+# Pattern 1: Slow breathing (cosine ease-in-out, 30s up, 30s down)
+PATTERN:1;CH:1;RAMP:(C:0,255,30000),(C:255,0,30000);REPEATS:2
+
+# Pattern 2: Linear ramp (30s up, 30s down)
+PATTERN:2;CH:1;RAMP:(L:0,200,30000),(L:200,0,30000);REPEATS:2
+
+# Total CH1: 60s + 60s = 120s (2 minutes)
+
+# ============================================================================
+# CHANNEL 2: STATUS-based patterns (120s total)
+# ============================================================================
+# Traditional ON/OFF patterns with pulse effects
+
+# Pattern 1: Simple blink (1s ON, 1s OFF) for 30s
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:1000,1000;REPEATS:15
+
+# Pattern 2: Fast blink (500ms ON, 500ms OFF) for 30s  
+PATTERN:2;CH:2;STATUS:1,0;TIME_MS:500,500;REPEATS:30
+
+# Pattern 3: Solid ON with PWM pulse effect (500ms period, 100ms width) for 30s
+PATTERN:3;CH:2;STATUS:255,0;TIME_MS:1000,1000;REPEATS:15;PULSE:T500pw100,T0pw0
+
+# Pattern 4: Asymmetric timing (2s ON, 0.5s OFF) for 30s
+PATTERN:4;CH:2;STATUS:1,0;TIME_MS:2000,500;REPEATS:12
+
+# Total CH2: 30s + 30s + 30s + 30s = 120s (2 minutes)
+
+# ============================================================================
+# START TIME & SETTINGS
+# ============================================================================
+# Both channels start immediately (countdown=0)
+START_TIME: {'CH1': 0, 'CH2': 0}
+
+# Wait status: OFF during countdown (not relevant here since countdown=0)
+WAIT_STATUS: {'CH1': 0, 'CH2': 0}

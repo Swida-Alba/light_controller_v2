@@ -4,6 +4,21 @@ Complete hardware setup guide for Arduino boards.
 
 ---
 
+## ⚠️ Important: Board Selection
+
+**For PWM/RAMP mode (smooth fading), Arduino Due is strongly recommended.**
+
+| Feature | Arduino Uno | Arduino Due |
+|---------|-------------|-------------|
+| **SRAM** | 2 KB | **96 KB** |
+| PWM_RAMP_MODE | ❌ May fail | ✅ Recommended |
+| PULSE_MODE | ⚠️ Limited | ✅ Full support |
+| Status with many patterns | ⚠️ Limited | ✅ Full support |
+
+The firmware with PWM/RAMP enabled uses **~12 KB SRAM**, which exceeds Arduino Uno's 2 KB total. Use Arduino Due for full functionality.
+
+---
+
 ## Table of Contents
 
 - [Supported Boards](#supported-boards)
@@ -17,69 +32,85 @@ Complete hardware setup guide for Arduino boards.
 
 ## Supported Boards
 
-### Arduino Uno
+### Arduino Due ⭐ Recommended
 
 **Specifications:**
-- **Channels:** 4 (CH1-CH4)
-- **Pins:** Digital 2, 4, 6, 8
-- **Memory:** Limited (1KB EEPROM)
-- **Max Commands:** ~200-300
-
-**Best for:**
-- Simple protocols
-- Learning
-- Budget projects
-- Limited channel needs
-
----
-
-### Arduino Due
-
-**Specifications:**
-- **Channels:** 4 (CH1-CH4)
-- **Pins:** Digital 2, 4, 6, 8
-- **Memory:** Large (4KB EEPROM)
-- **Max Commands:** ~1000-1500
+- **SRAM:** 96 KB (firmware uses ~12.1 KB = 12.6%)
+- **Channels:** Up to 8 (CH1-CH8)
+- **Pins:** Digital 2, 4, 6, 8, 10, 12, A0, A1
+- **Memory:** Large (4KB EEPROM equivalent in flash)
+- **Max Patterns:** 10+ per channel
 - **USB Ports:** Programming + Native
 
 **Best for:**
-- Complex protocols
-- Long sequences
-- Professional projects
-- Maximum capability
+- ✅ **PWM/RAMP mode** (smooth LED fading)
+- ✅ **PULSE mode** (PWM modulation)
+- ✅ Complex protocols with many patterns
+- ✅ Professional/production projects
+- ✅ Long-duration experiments
 
 **Important:** Two USB ports!
-- **Programming Port:** For uploading sketch
-- **Native Port:** For running protocol (serial communication)
+- **Programming Port:** For uploading sketch AND serial communication
+- **Native Port:** Alternative for serial (doesn't reset on connection)
+
+---
+
+### Arduino Uno
+
+> ⚠️ **Warning:** Arduino Uno has only 2 KB SRAM. The firmware with PWM_RAMP_MODE enabled requires ~12 KB SRAM and **will not work** on Arduino Uno.
+
+**Specifications:**
+- **SRAM:** 2 KB (insufficient for PWM/RAMP mode)
+- **Channels:** 4 (CH1-CH4)
+- **Pins:** Digital 2, 4, 6, 8
+- **Memory:** Limited (1KB EEPROM)
+- **Max Commands:** ~200-300 (STATUS mode only)
+
+**Use only if:**
+- Simple STATUS patterns (on/off only)
+- PWM_RAMP_MODE = 0 in firmware
+- PULSE_MODE_COMPILE = 0 in firmware
+- Very limited pattern count
+
+**To use with Uno, modify firmware:**
+```cpp
+#define PWM_RAMP_MODE_COMPILE 0  // Disable PWM ramp
+#define PULSE_MODE_COMPILE 0     // Disable pulse mode
+#define MAX_CHANNEL_NUM 3        // Reduce channels
+#define PATTERN_LENGTH 2         // Minimize patterns
+```
 
 ---
 
 ### Arduino Mega
 
 **Specifications:**
+- **SRAM:** 8 KB (marginal for PWM/RAMP mode)
 - **Channels:** 4 (CH1-CH4)
 - **Pins:** Digital 2, 4, 6, 8
 - **Memory:** Large (4KB EEPROM)
 - **Max Commands:** ~400-600
 
 **Best for:**
-- Medium complexity
+- Medium complexity protocols
+- PWM/RAMP mode with reduced settings
 - Multiple projects
-- Good balance
 - Extended features
 
 ---
 
 ### Feature Comparison
 
-| Feature | Uno | Due | Mega |
-|---------|-----|-----|------|
-| Channels | 4 | 4 | 4 |
-| Memory | 1KB | 4KB | 4KB |
-| Max Commands | ~200-300 | ~1000-1500 | ~400-600 |
-| USB Ports | 1 | 2 | 1 |
-| Best For | Simple | Complex | Medium |
-| Price | $ | $$$ | $$ |
+| Feature | Uno | Mega | Due ⭐ |
+|---------|-----|------|--------|
+| SRAM | 2 KB | 8 KB | **96 KB** |
+| Channels | 4 | 4 | 8 |
+| PWM/RAMP Mode | ❌ No | ⚠️ Limited | ✅ Yes |
+| PULSE Mode | ❌ No | ⚠️ Limited | ✅ Yes |
+| Max Patterns | ~2-3 | ~5-6 | **10+** |
+| USB Ports | 1 | 1 | 2 |
+| Price | $ | $$ | $$$ |
+| **Recommended** | ❌ | ⚠️ | ✅ **Yes** |
 
 ---
 
@@ -88,7 +119,9 @@ Complete hardware setup guide for Arduino boards.
 ### Required Components
 
 1. **Arduino Board**
-   - Uno, Due, or Mega (see above)
+   - **Due (recommended)** for PWM/RAMP mode
+   - Mega for medium complexity
+   - Uno only for simple STATUS patterns
    - USB cable (Type B for Uno/Mega, Micro-B for Due)
 
 2. **LEDs**

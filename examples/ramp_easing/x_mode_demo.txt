@@ -1,0 +1,132 @@
+# ===================================================================================
+# X MODE CUSTOM COSINE RANGE EXAMPLE (v2.2.3)
+# ===================================================================================
+# Demonstrates X mode for precise control over cosine curve sections
+#
+# X mode formula: PWM = 255 * (1 - cos(π * t)) / 2
+# Where t ranges from t_start to t_end
+#
+# Key insight: The cosine curve from t=0→2 creates a complete breathing cycle
+#   t=0: PWM=0 (start at off)
+#   t=1: PWM=255 (peak brightness)
+#   t=2: PWM=0 (back to off)
+#
+# FORMAT: (X:duration_ms|t_start,t_end)
+# NOTE: X mode does NOT use start_pwm/end_pwm - PWM is determined by the formula
+#
+# Use with:
+#   python mock_arduino.py examples/x_mode_demo.txt --plot
+# ===================================================================================
+
+# ============================================================================
+# BASIC X MODE - FULL CYCLE
+# ============================================================================
+
+# t=0→2: Complete breathing cycle (0→255→0) over 4 seconds
+PATTERN:1;CH:1;RAMP:(X:4000|0,2);REPEATS:4
+
+# ============================================================================
+# HALF CYCLES - RISING AND FALLING
+# ============================================================================
+
+# t=0→1: Rising half (ease-in shape, 0→255)
+# Slow start, fast end - good for gradual wake-up
+PATTERN:1;CH:2;RAMP:(X:3000|0,1);REPEATS:3
+
+# t=1→2: Falling half (ease-out shape, 255→0)
+# Fast start, slow end - good for gentle shutdown
+PATTERN:1;CH:3;RAMP:(X:3000|1,2);REPEATS:3
+
+# ============================================================================
+# QUARTER CYCLES - PARTIAL CURVES
+# ============================================================================
+
+# t=0→0.5: First quarter (very slow start, 0→~127)
+PATTERN:1;CH:4;RAMP:(X:2000|0,0.5);REPEATS:3
+
+# t=0.5→1: Second quarter (accelerating, ~127→255)
+PATTERN:2;CH:4;RAMP:(X:2000|0.5,1);REPEATS:3
+
+# t=1→1.5: Third quarter (decelerating start, 255→~127)
+PATTERN:1;CH:5;RAMP:(X:2000|1,1.5);REPEATS:3
+
+# t=1.5→2: Fourth quarter (slow fade to zero, ~127→0)
+PATTERN:2;CH:5;RAMP:(X:2000|1.5,2);REPEATS:3
+
+# ============================================================================
+# MULTI-SEGMENT X MODE PATTERNS
+# ============================================================================
+
+# Slow rise (4s) + quick fall (1s) - asymmetric breathing
+PATTERN:1;CH:6;RAMP:(X:4000|0,1),(X:1000|1,2);REPEATS:4
+
+# Quick rise (1s) + slow fall (4s) - inverse asymmetric
+PATTERN:2;CH:6;RAMP:(X:1000|0,1),(X:4000|1,2);REPEATS:2
+
+# ============================================================================
+# X MODE WITH HOLD PHASES
+# ============================================================================
+
+# Rise → Hold at peak (2s) → Fall
+PATTERN:1;CH:7;RAMP:(X:2000|0,1),(L:255,255,2000),(X:2000|1,2);REPEATS:3
+
+# Start at peak, hold (2s), then fall
+PATTERN:2;CH:7;RAMP:(L:255,255,2000),(X:3000|1,2);REPEATS:2
+
+# ============================================================================
+# COMBINING X MODE WITH OTHER MODES
+# ============================================================================
+
+# X mode rise + Linear fall
+PATTERN:1;CH:8;RAMP:(X:3000|0,1),(L:255,0,2000);REPEATS:3
+
+# Linear rise + X mode fall
+PATTERN:2;CH:8;RAMP:(L:0,255,2000),(X:3000|1,2);REPEATS:3
+
+# ============================================================================
+# ADVANCED: CUSTOM T RANGES
+# ============================================================================
+
+# t=0.25→0.75: Middle section only (~60 → ~195)
+# Compressed curve for mid-range control
+PATTERN:3;CH:1;RAMP:(X:3000|0.25,0.75);REPEATS:2
+
+# t=0→0.25 + t=0.75→1: Two segments (slow start + fast finish)
+PATTERN:3;CH:2;RAMP:(X:1500|0,0.25),(X:1500|0.75,1);REPEATS:2
+
+# ============================================================================
+# START_TIME (REQUIRED)
+# ============================================================================
+START_TIME: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0, 'CH5': 0, 'CH6': 0, 'CH7': 0, 'CH8': 0}
+
+# ===================================================================================
+# X MODE REFERENCE
+# ===================================================================================
+#
+# CORRECT FORMAT: (X:duration_ms|t_start,t_end)
+#
+# Example: (X:3000|0,1) = 3 second rise from 0% to 100%
+#
+# NOTE: X mode does NOT use start_pwm or end_pwm!
+#       The PWM value is ALWAYS calculated from the formula:
+#       PWM = 255 * (1 - cos(π * t)) / 2
+#
+# COSINE CURVE VALUES:
+#   t=0.0  → PWM=0     (0%)
+#   t=0.25 → PWM=60    (~24%)
+#   t=0.5  → PWM=127   (50%)
+#   t=0.75 → PWM=195   (~76%)
+#   t=1.0  → PWM=255   (100%)
+#   t=1.25 → PWM=195   (~76%)
+#   t=1.5  → PWM=127   (50%)
+#   t=1.75 → PWM=60    (~24%)
+#   t=2.0  → PWM=0     (0%)
+#
+# COMMON USE CASES:
+#   (X:3000|0,2)   - Full breathing cycle (3 seconds)
+#   (X:2000|0,1)   - Rising half (2 seconds: 0→255)
+#   (X:2000|1,2)   - Falling half (2 seconds: 255→0)
+#   (X:1000|0,0.5) - Slow start portion
+#   (X:1000|0.5,1) - Fast finish portion
+#
+# ===================================================================================

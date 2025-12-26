@@ -1,0 +1,18 @@
+# ===================================================================================
+# 1-MINUTE PWM RAMP TEST (v2.3.0)
+# ===================================================================================
+# A quick 1-minute test protocol for validating PWM/RAMP with serial_monitor.py
+# 
+# Total duration: ~60 seconds
+# Channels used: CH1 and CH2 (Arduino Due pins 11 and 10)
+# ===================================================================================
+
+# CHANNEL 1: RAMP breathing (30s up, 30s down = 60s)
+PATTERN:1;CH:1;RAMP:(C:0,255,15000),(C:255,0,15000);REPEATS:2
+
+# CHANNEL 2: Simple blink (1s ON, 1s OFF) for 60s
+PATTERN:1;CH:2;STATUS:255,0;TIME_MS:1000,1000;REPEATS:30
+
+# Start immediately
+START_TIME: {'CH1': 0, 'CH2': 0}
+WAIT_STATUS: {'CH1': 0, 'CH2': 0}

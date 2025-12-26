@@ -1,6 +1,6 @@
 # Installation Guide
 
-Complete installation instructions for Light Controller V2.2.
+Complete installation instructions for Light Controller V2.3.
 
 ---
 

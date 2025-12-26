@@ -7,22 +7,29 @@
 # ----------------------------------------------------------------------------
 # PATTERN COMMANDS (REQUIRED - at least one pattern per channel)
 # ----------------------------------------------------------------------------
-# Format: PATTERN:<id>;CH:<channel>;STATUS:<states>;TIME_MS:<durations>;REPEATS:<count>;PULSE:<optional>
+# Format: PATTERN:<id>;CH:<channel>;STATUS:<states>;TIME_MS:<durations>;REPEATS:<count>[;PULSE:<params>]
+#
+# PULSE SYNTAX (optional):
+#   - Omit entirely if no pulse effect needed
+#   - PULSE:T<period>pw<width>,T<period>pw<width> for each status state
+#   - T0pw0 means no pulse for that state
+#   - Example: PULSE:T500pw50,T0pw0 = pulse ON state only
 
-# Channel 1: Alternating ON/OFF pattern
-PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:5;PULSE:,
+# Channel 1: Alternating ON/OFF pattern (no pulse)
+PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:5
 
-# Channel 1: Faster blink pattern
-PATTERN:2;CH:1;STATUS:1,0;TIME_MS:500,500;REPEATS:10;PULSE:,
+# Channel 1: Faster blink pattern (no pulse)
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:500,500;REPEATS:10
 
-# Channel 2: ON/OFF with longer ON time
-PATTERN:1;CH:2;STATUS:1,0;TIME_MS:2000,500;REPEATS:3;PULSE:,
+# Channel 2: ON/OFF with longer ON time (no pulse)
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:2000,500;REPEATS:3
 
 # Channel 3: ON with pulse effect, then OFF
-PATTERN:1;CH:3;STATUS:1,0;TIME_MS:1000,2000;REPEATS:5;PULSE:T500pw50,
+# Pulse during ON: period=500ms, width=50ms (10% duty cycle)
+PATTERN:1;CH:3;STATUS:1,0;TIME_MS:1000,2000;REPEATS:5;PULSE:T500pw50,T0pw0
 
-# Channel 4: Simple solid ON
-PATTERN:1;CH:4;STATUS:1;TIME_MS:5000;REPEATS:1;PULSE:
+# Channel 4: Simple solid ON (no pulse)
+PATTERN:1;CH:4;STATUS:1;TIME_MS:5000;REPEATS:1
 
 # ----------------------------------------------------------------------------
 # START_TIME (REQUIRED - must specify for all channels used)

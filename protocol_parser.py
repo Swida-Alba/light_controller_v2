@@ -21,27 +21,44 @@ if __name__ == '__main__':
     print('Welcome to use the light controller!')
     
     try:
-        # Get pattern_length parameter from command line (required)
+        # Parse command line arguments
+        # Usage: python protocol_parser.py [pattern_length] [port] [protocol_file]
         pattern_length = 2  # Default value
+        port = None
+        protocol_file = None
+        
         if len(sys.argv) > 1:
             try:
                 pattern_length = int(sys.argv[1])
                 print(f'Using pattern_length: {pattern_length}')
             except ValueError:
                 print(f'Error: Invalid pattern_length "{sys.argv[1]}". Must be an integer.')
-                print('Usage: python protocol_parser.py [pattern_length]')
-                print('Example: python protocol_parser.py 4')
+                print('Usage: python protocol_parser.py [pattern_length] [port] [protocol_file]')
+                print('Example: python protocol_parser.py 2 /dev/cu.usbmodem1101 protocol.txt')
                 sys.exit(1)
         else:
             print(f'Using default pattern_length: {pattern_length}')
-            print('(To specify: python protocol_parser.py [pattern_length])')
         
-        # Select protocol file
-        print('\nPlease select your protocol file...')
-        protocol_file = filedialog.askopenfilename(
-            title='Select the protocol file',
-            filetypes=[('Protocol files', '*.xlsx *.txt'), ('Excel files', '*.xlsx'), ('Text files', '*.txt')]
-        )
+        # Get port from command line if provided
+        if len(sys.argv) > 2:
+            port = sys.argv[2]
+            print(f'Using port: {port}')
+        
+        # Get protocol file from command line if provided
+        if len(sys.argv) > 3:
+            protocol_file = sys.argv[3]
+            if not os.path.exists(protocol_file):
+                print(f'Error: Protocol file not found: {protocol_file}')
+                sys.exit(1)
+            print(f'Using protocol file: {protocol_file}')
+        
+        # If no protocol file provided, use file dialog
+        if not protocol_file:
+            print('\nPlease select your protocol file...')
+            protocol_file = filedialog.askopenfilename(
+                title='Select the protocol file',
+                filetypes=[('Protocol files', '*.xlsx *.txt'), ('Excel files', '*.xlsx'), ('Text files', '*.txt')]
+            )
         
         if not protocol_file:
             print('No file selected. Exiting.')
@@ -52,7 +69,7 @@ if __name__ == '__main__':
             with LightControllerParser(protocol_file, pattern_length=pattern_length, calibration_method='v2') as parser:
                 # Setup serial connection with pattern length verification
                 if not parser.setup_serial(board_type='Arduino', baudrate=9600, 
-                                          verify_pattern_length=True):
+                                          verify_pattern_length=True, port=port):
                     raise ValueError('Serial port is not available.')
                 
                 # Parse and execute
@@ -110,6 +127,64 @@ if __name__ == '__main__':
                     print(f'    Protocol executed successfully, but visualization failed.')
                 
                 print('='*70)
+                
+                # Optional: Monitor serial output for $CHMON messages
+                if len(sys.argv) > 4 and sys.argv[4] == '--monitor':
+                    # Send Bye command to start execution (but don't close connection)
+                    from lcfunc import SayBye
+                    SayBye(parser.ser)
+                    print('\n📊 Monitoring channel values (Ctrl+C to stop)...\n')
+                    
+                    monitor_csv = commands_file.replace('.txt', '_monitored.csv')
+                    csv_file = open(monitor_csv, 'w')
+                    csv_file.write("timestamp,time_ms,CH1,CH2,CH3,CH4,CH5,CH6,CH7,CH8\n")
+                    start_time = datetime.now()
+                    last_print_time = 0
+                    
+                    try:
+                        while True:
+                            if parser.ser and parser.ser.in_waiting:
+                                line = parser.ser.readline().decode('utf-8', errors='ignore').strip()
+                                if line.startswith('$CHMON:'):
+                                    # Parse: $CHMON:CH1:pwm1,CH2:pwm2,...
+                                    elapsed = (datetime.now() - start_time).total_seconds()
+                                    channels = {}
+                                    for ch_data in line[7:].split(','):
+                                        parts = ch_data.split(':')
+                                        if len(parts) == 2:
+                                            ch_num = int(parts[0][2:])
+                                            channels[ch_num] = int(parts[1])
+                                    
+                                    # Write to CSV
+                                    timestamp = datetime.now().isoformat()
+                                    values = [channels.get(i, 0) for i in range(1, 9)]
+                                    csv_file.write(f"{timestamp},{elapsed*1000:.0f},{','.join(map(str, values))}\n")
+                                    csv_file.flush()
+                                    
+                                    # Print status every 0.5 seconds
+                                    if elapsed - last_print_time >= 0.5:
+                                        status = f"⏱️  {elapsed:6.1f}s | "
+                                        for ch in range(1, min(5, len(channels)+1)):
+                                            pwm = channels.get(ch, 0)
+                                            bar_len = pwm // 25
+                                            bar = '█' * bar_len + '░' * (10 - bar_len)
+                                            status += f"CH{ch}: {pwm:3d} [{bar}] | "
+                                        print(status)
+                                        last_print_time = elapsed
+                                elif line and not line.startswith('$'):
+                                    print(f"  < {line}")
+                            else:
+                                import time
+                                time.sleep(0.01)
+                    except KeyboardInterrupt:
+                        print(f'\n\n⏹️  Monitoring stopped')
+                        print(f'📊 Data saved to: {monitor_csv}')
+                    finally:
+                        csv_file.close()
+                        # Close serial and mark as closed to prevent double-Bye
+                        if parser.ser:
+                            parser.ser.close()
+                            parser.ser = None
                 
     except Exception as e:
         import traceback

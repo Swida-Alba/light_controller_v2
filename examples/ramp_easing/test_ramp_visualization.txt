@@ -1,0 +1,27 @@
+# ===================================================================================
+# TEST RAMP VISUALIZATION - Intensity Plot Testing
+# ===================================================================================
+# This file tests the new RAMP command format with parenthesized segments
+# and the intensity-time plotting feature in the HTML visualizer
+# ===================================================================================
+
+# Channel 1: Breathing effect using full cosine cycle (0→255→0)
+# Uses custom mode with t=[0,2] for complete cosine period
+PATTERN:1;CH:1;RAMP:(X:0,255,2000|0,1),(X:255,0,2000|1,2);REPEATS:3
+
+# Channel 2: Linear ramp up then down
+# Simple linear transitions for reference
+PATTERN:1;CH:2;RAMP:(L:0,255,3000),(L:255,0,3000);REPEATS:2
+
+# Channel 3: Ease-in effect (slow start, accelerating)
+# Uses t=[0,1] portion of cosine curve
+PATTERN:1;CH:3;RAMP:(I:0,255,4000);REPEATS:2
+
+# Channel 4: Ease-out effect (fast start, decelerating)  
+# Uses t=[1,2] portion of cosine curve
+PATTERN:1;CH:4;RAMP:(O:0,255,4000);REPEATS:2
+
+# Channel 5: Combined breathing with hold
+PATTERN:1;CH:5;RAMP:(C:0,255,1500),(C:255,0,1500);REPEATS:1
+PATTERN:2;CH:5;STATUS:255;TIME_MS:2000;REPEATS:1
+PATTERN:3;CH:5;RAMP:(L:255,0,2000);REPEATS:1

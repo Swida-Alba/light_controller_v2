@@ -1,16 +1,17 @@
 # Light Controller V2.2
 
-A flexible Arduino-based light control system with **native pulsing support**, **pattern compression**, **automatic calibration management**, precise timing control, and pulse frequency modulation.
+A flexible Arduino-based light control system with **PWM intensity control**, **smooth ramp transitions**, **easing functions**, **pattern compression**, **automatic calibration management**, precise timing control, and pulse frequency modulation.
 
-**Version**: 2.2.2  
-**Last Updated**: December 12, 2025  
+**Version**: 2.3.0  
+**Last Updated**: December 26, 2025  
 **Status**: Production Ready ✅
 
 ---
 
 ## 📑 Table of Contents
 
-- [What's New in v2.2](#-whats-new-in-v22) - Latest features including automatic calibration
+- [What's New in v2.3.0](#-whats-new-in-v230) - PWM/RAMP enhancements and interactive visualization
+- [What's New in v2.2](#-whats-new-in-v22) - Automatic calibration and pattern compression
 - [Quick Start](#-quick-start) - Get running in 10 minutes
 - [Key Features](#-key-features) - What it can do
 - [Examples](#-examples) - Ready-to-use protocols (automatic vs preset calibration)
@@ -21,9 +22,81 @@ A flexible Arduino-based light control system with **native pulsing support**, *
 
 ---
 
+## 🎯 What's New in v2.3.0
+
+### Documentation & Examples (Dec 26, 2025)
+
+- **Examples Reorganization**: Created dedicated `ramp_easing/` subfolder for RAMP/easing demos
+- **Syntax Cleanup**: Fixed obsolete PULSE syntax (`PULSE:,` trailing commas) in example protocols
+- **RAMP Format Updates**: Converted legacy RAMP format to v2.2.3+ parenthesized syntax
+- **Documentation Archival**: Archived 29 outdated docs, reduced from 61 to 32 active files
+- **Enhanced READMEs**: Comprehensive guides for each example subfolder
+
+---
+
+## Previous Releases
+
+### v2.2.3 (Dec 26, 2025)
+
+### 🌊 PWM & Ramp Enhancements
+- **Unified Easing Formula** - Single cosine function `f(t) = (1 - cos(πt))/2` for all modes
+- **Extended t Range** - Now supports t ∈ [0, 2] for complete breathing cycles
+- **New Command Format** - Cleaner parenthesized syntax: `RAMP:(MODE:start,end,duration[|t_start,t_end])`
+- **On-the-fly Interpolation** - Arduino performs smooth PWM transitions without pre-calculated steps
+- **4 Easing Modes** with correct t ranges:
+  - **Linear (L)**: Constant speed transitions
+  - **Ease-In (I)**: Slow start, accelerating (ascending: t: 0→0.5, descending: t: 1→1.5)
+  - **Ease-Out (O)**: Fast start, decelerating (ascending: t: 0.5→1, descending: t: 1.5→2)
+  - **Cosine (C)**: Full S-curve (ascending: t: 0→1, descending: t: 1→2)
+  - **Custom (X)**: Any t range for advanced control - `(X:duration|t_start,t_end)`
+  - **Function (F)**: 🆕 Custom functions for complex effects - `(F:func_name,duration)`
+
+📖 **[PWM & Ramp Control Guide](docs/PWM_RAMP_CONTROL.md)** - Complete easing documentation  
+📖 **[F Mode Custom Functions](docs/F_MODE_CUSTOM_FUNCTIONS.md)** - Heartbeat, bounce, flicker & more 🆕
+
+### 📊 Interactive Visualization
+- **Jupyter Notebook** - Interactive Plotly charts with real easing curves
+- **Protocol Examples** - Sunrise, breathing, circadian rhythm, multi-channel demos
+- **HTML Visualizer** - Real-time intensity-time plots for all channels
+- **Live Plotting** - See exactly what your protocol will do
+
+📓 **[Easing Curves Notebook](docs/easing_curves_visualization.ipynb)** - Interactive visualization  
+🌐 **[HTML Visualizer Guide](docs/HTML_VISUALIZATION.md)** - Protocol timeline visualization
+
+### 🔌 Arduino Channel Monitor (NEW!)
+- **Real-time PWM Tracking** - Array stores current values for all channels
+- **Configurable Output** - Customizable print interval (default 100ms)
+- **Serial Port Monitoring** - View live channel values via serial connection
+- **Integration Ready** - Easy hooks for data logging and analysis
+
+### 📈 Python Serial Monitor (NEW!)  
+- **Live Data Stream** - Parse Arduino serial output in real-time
+- **On-the-fly Plotting** - Visualize channel values as they execute
+- **Connection Auto-detect** - Automatic COM port detection
+- **Data Logging** - Optional CSV export of channel values
+
+📊 **[Serial Monitor Guide](docs/SERIAL_MONITOR_GUIDE.md)** - Setup and usage instructions  
+💻 **[serial_monitor.py](serial_monitor.py)** - Real-time visualization tool
+
+### 🧪 Mock Arduino Simulator (NEW!)
+- **Test Without Hardware** - Simulate protocols before uploading to Arduino
+- **Protocol Validation** - Parse and verify protocol syntax
+- **Visual Output** - Generate Plotly charts of simulated execution
+- **CSV Export** - Save simulation data for analysis
+- **Real-time Mode** - Watch simulated execution at adjustable speed
+
+🤖 **[mock_arduino.py](mock_arduino.py)** - Protocol simulation tool
+
+```bash
+# Quick test:
+python mock_arduino.py protocol.txt --plot --output data.csv
+```
+
+---
+
 ## 🎯 What's New in v2.2
 
-### ✨ Automatic Calibration System (NEW!)
+### ✨ Automatic Calibration System
 - **🤖 Board identification** - Unique ID per Arduino (serial number/VID:PID)
 - **💾 Database storage** - Calibrations saved to `calibration_database.json`
 - **♻️ Auto-retrieval** - Stored calibrations automatically loaded
@@ -61,6 +134,18 @@ A flexible Arduino-based light control system with **native pulsing support**, *
 ## 🚀 Quick Start
 
 ### 1. Installation
+
+#### Prerequisites
+- **Python 3.6+** (tested up to 3.13)
+- **Arduino IDE** (for firmware upload)
+- **Arduino Board**: 
+  - ⭐ **Arduino Due** (recommended) - 96KB SRAM, full PWM/RAMP support
+  - ⚠️ Arduino Mega - 8KB SRAM, limited PWM/RAMP
+  - ❌ Arduino Uno - 2KB SRAM, **insufficient for PWM/RAMP mode**
+
+> **⚠️ Memory Warning**: The firmware with PWM_RAMP_MODE enabled uses ~12KB SRAM. Arduino Uno (2KB) will not work with PWM/RAMP features. Use Arduino Due for full functionality.
+
+#### Quick Install
 ```bash
 # Clone repository
 git clone https://github.com/Swida-Alba/light_controller_v2.git
@@ -68,6 +153,24 @@ cd light_controller_v2.2
 
 # Install Python dependencies
 pip install -r requirements.txt
+```
+
+#### Dependencies Installed
+| Package | Purpose |
+|---------|---------|
+| `pyserial` | Arduino serial communication |
+| `pandas` | Excel file parsing |
+| `openpyxl` | Excel .xlsx support |
+| `numpy` | Numerical calculations |
+| `plotly` | Interactive visualizations (optional) |
+
+#### Verify Installation
+```bash
+# Check Python packages
+python -c "import serial, pandas, openpyxl, numpy; print('All dependencies OK!')"
+
+# Test mock Arduino simulator (parses and validates protocol)
+python mock_arduino.py examples/auto_calibration/simple_blink_example.txt --quiet
 ```
 
 📖 **[Full Installation Guide](docs/INSTALLATION.md)** - Detailed setup instructions
@@ -79,12 +182,16 @@ pip install -r requirements.txt
    ```cpp
    const int PATTERN_LENGTH = 2;     // 2, 4, 8, etc. (must match Python)
    #define PULSE_MODE_COMPILE 1      // 1=Enable pulses, 0=Disable (saves ~2.5KB)
+   #define PWM_RAMP_MODE_COMPILE 1   // 1=Enable smooth ramps, 0=Binary only
    ```
-3. Select your board: Tools → Board → Arduino Uno/Due/Mega
+3. Select your board: 
+   - **Arduino Due** (recommended): Tools → Board → Arduino SAM Boards → Arduino Due (Programming Port)
+   - Arduino Mega: Tools → Board → Arduino AVR Boards → Arduino Mega
+   - Arduino Uno (limited): Tools → Board → Arduino AVR Boards → Arduino Uno
 4. Select port: Tools → Port → (your Arduino port)
 5. Click Upload
 
-📖 **[Arduino Setup Guide](docs/ARDUINO_SETUP.md)** - Board-specific instructions  
+📖 **[Arduino Setup Guide](docs/ARDUINO_SETUP.md)** - Board-specific instructions & memory requirements  
 📖 **[Firmware Update Guide](docs/FIRMWARE_UPDATE_INSTRUCTIONS.md)** - Updating existing firmware
 
 ### 3. Run Your First Protocol
@@ -244,6 +351,15 @@ Additional examples in `examples/` root:
 **Create Protocol:**  
 [Protocol Formats](docs/PROTOCOL_FORMATS.md) → [Templates](docs/TEMPLATES.md) → [Examples](examples/README.md)
 
+**PWM & Ramp (v2.3.0):**  
+[PWM & Ramp Guide](docs/PWM_RAMP_CONTROL.md) → [Easing Curves Notebook](docs/easing_curves_visualization.ipynb) → [HTML Visualizer](docs/HTML_VISUALIZATION.md)
+
+**Monitor Execution:**  
+[Serial Monitor Guide](docs/SERIAL_MONITOR_GUIDE.md) → [Channel Monitoring](docs/SERIAL_MONITOR_GUIDE.md)
+
+**Test & Simulate:**  
+[Mock Arduino Guide](docs/MOCK_ARDUINO_GUIDE.md) → [Protocol Validation](docs/MOCK_ARDUINO_GUIDE.md#protocol-validation) → [F Mode Functions](docs/F_MODE_CUSTOM_FUNCTIONS.md)
+
 **Optimize Performance:**  
 [Pattern Compression](docs/PATTERN_COMPRESSION_GUIDE.md) → [Verification](docs/PATTERN_LENGTH_VERIFICATION.md)
 
@@ -259,13 +375,21 @@ Additional examples in `examples/` root:
 <details>
 <summary><b>📑 Expand Full Documentation Categories</b></summary>
 
+### 💡 PWM & Ramp Control
+- **[PWM & Ramp Control Guide](docs/PWM_RAMP_CONTROL.md)** - Complete easing and ramp documentation
+- **[F Mode Custom Functions](docs/F_MODE_CUSTOM_FUNCTIONS.md)** - Heartbeat, bounce, flicker & more 🆕
+- **[Easing Curves Interactive Notebook](docs/easing_curves_visualization.ipynb)** - Plotly visualizations with real examples
+- **[HTML Protocol Visualizer](docs/HTML_VISUALIZATION.md)** - See your protocols with intensity plots
+- **[Serial Monitor Guide](docs/SERIAL_MONITOR_GUIDE.md)** - Real-time channel value monitoring
+- **[Mock Arduino Simulator](docs/MOCK_ARDUINO_GUIDE.md)** - Test protocols without hardware 🆕
+
 ### 🚀 Getting Started
 - **[Installation Guide](docs/INSTALLATION.md)** - Complete setup
 - **[Arduino Setup](docs/ARDUINO_SETUP.md)** - Hardware configuration
 - **[Usage Guide](docs/USAGE.md)** - Basic and advanced usage
 - **[Quick Start Examples](examples/README.md)** - Ready-to-use protocols
 
-### ⏱️ Calibration System (NEW!)
+### ⏱️ Calibration System
 - **[Automatic Calibration Database](docs/AUTO_CALIBRATION_DATABASE.md)** - Complete system guide
 - **[Backward Compatibility](docs/BACKWARD_COMPATIBILITY.md)** - How old protocols work
 - **[Calibration Guide](docs/CALIBRATION_GUIDE.md)** - Understanding timing calibration
@@ -451,13 +575,15 @@ light_controller_v2.2/
 
 ## 📊 Project Status
 
-**Version**: 2.2.2  
+**Version**: 2.2.3  
 **Status**: Production Ready ✅  
 **Tested**: Python 3.6-3.13, Arduino Uno/Due/Mega  
 **License**: [MIT](LICENSE)
 
 ### Version History
 
+- **v2.3.0** (Dec 26, 2025) - Documentation cleanup, examples reorganization, syntax updates
+- **v2.2.3** (Dec 26, 2025) - PWM/RAMP enhancements, F mode custom functions, X mode format update, hybrid protocol validation, mock Arduino simulator
 - **v2.2.2** (Dec 12, 2025) - Improved serial communication reliability for PULSE commands, fixed calibration skip issue
 - **v2.2.1** (Nov 10, 2025) - Automatic calibration system with 3-month expiration, examples reorganization
 - **v2.2.0** (Nov 8, 2025) - Pattern compression, auto-verification, real-time visualization

@@ -1,9 +1,28 @@
-PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:5;PULSE:,
-PATTERN:2;CH:1;STATUS:1,0;TIME_MS:500,500;REPEATS:10;PULSE:,
-PATTERN:1;CH:2;STATUS:1,0;TIME_MS:2000,500;REPEATS:3;PULSE:,
-PATTERN:1;CH:3;STATUS:1,0;TIME_MS:1000,2000;REPEATS:5;PULSE:T500pw50,
-PATTERN:1;CH:4;STATUS:1;TIME_MS:5000;REPEATS:1;PULSE:
+# ===================================================================================
+# CLEAN PROTOCOL EXAMPLE (Minimal)
+# ===================================================================================
+# Demonstrates basic protocol structure without optional parameters
+# ===================================================================================
+
+# Channel 1: Basic blink patterns
+PATTERN:1;CH:1;STATUS:1,0;TIME_MS:1000,1000;REPEATS:5
+PATTERN:2;CH:1;STATUS:1,0;TIME_MS:500,500;REPEATS:10
+
+# Channel 2: Asymmetric timing
+PATTERN:1;CH:2;STATUS:1,0;TIME_MS:2000,500;REPEATS:3
+
+# Channel 3: With pulse effect (ON state has 500ms period, 50ms pulse width)
+PATTERN:1;CH:3;STATUS:1,0;TIME_MS:1000,2000;REPEATS:5;PULSE:T500pw50,T0pw0
+
+# Channel 4: Simple solid ON
+PATTERN:1;CH:4;STATUS:1;TIME_MS:5000;REPEATS:1
+
+# Start times (required)
 START_TIME: {'CH1': '21:00', 'CH2': 60, 'CH3': '21:30', 'CH4': 120}
+
+# Wait status during countdown (optional)
 WAIT_STATUS: {'CH1': 1, 'CH2': 0, 'CH3': 1, 'CH4': 0}
+
+# Wait pulse for CH1 (optional)
 WAIT_PULSE: {'CH1': {'period': 2000, 'pw': 100}}
 

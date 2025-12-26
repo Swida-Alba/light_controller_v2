@@ -102,34 +102,163 @@ def parse_commands(commands_file):
             channels[ch_num] = []
         
         pattern_match = re.search(r'PATTERN:(\d+)', line)
-        status_match = re.search(r'STATUS:([\d,]+)', line)
-        time_match = re.search(r'TIME_MS:([\d.,]+)', line)
         repeats_match = re.search(r'REPEATS:(\d+)', line)
         pulse_match = re.search(r'PULSE:([^;\n]*)', line)
         
-        if not all([pattern_match, status_match, time_match, repeats_match]):
+        # Check for RAMP command (new format)
+        ramp_match = re.search(r'RAMP:([^;]+)', line)
+        status_match = re.search(r'STATUS:([\d,]+)', line)
+        time_match = re.search(r'TIME_MS:([\d.,]+)', line)
+        
+        if not pattern_match or not repeats_match:
             continue
         
         pattern_num = int(pattern_match.group(1))
-        status_list = [int(s) for s in status_match.group(1).split(',')]
-        time_list = [float(t) for t in time_match.group(1).split(',')]
         repeats = int(repeats_match.group(1))
         
         pulse_str = pulse_match.group(1).strip() if pulse_match else ''
         has_pulse = pulse_str and pulse_str not in ['', ',']
         
-        channels[ch_num].append({
-            'pattern': pattern_num,
-            'status': status_list,
-            'time_ms': time_list,
-            # Recover requested (python) times from stored Arduino TIME_MS by multiplying
-            # python_time = calib_factor * arduino_time
-            'time_ms_original': [t * calib_factor for t in time_list],
-            'repeats': repeats,
-            'pulse': pulse_str if has_pulse else None  # Store the actual pulse string, not boolean
-        })
+        if ramp_match:
+            # Parse RAMP command
+            ramp_str = ramp_match.group(1).strip()
+            ramp_data = parse_ramp_for_visualization(ramp_str)
+            
+            channels[ch_num].append({
+                'pattern': pattern_num,
+                'status': [0],  # Placeholder, actual values from ramp
+                'time_ms': [ramp_data['total_duration_ms']],
+                'time_ms_original': [ramp_data['total_duration_ms'] * calib_factor],
+                'repeats': repeats,
+                'pulse': pulse_str if has_pulse else None,
+                'is_ramp': True,
+                'ramp_segments': ramp_data['segments'],
+                'ramp_total_duration': ramp_data['total_duration_ms']
+            })
+        elif status_match and time_match:
+            # Standard STATUS/TIME_MS command
+            status_list = [int(s) for s in status_match.group(1).split(',')]
+            time_list = [float(t) for t in time_match.group(1).split(',')]
+            
+            channels[ch_num].append({
+                'pattern': pattern_num,
+                'status': status_list,
+                'time_ms': time_list,
+                # Recover requested (python) times from stored Arduino TIME_MS by multiplying
+                # python_time = calib_factor * arduino_time
+                'time_ms_original': [t * calib_factor for t in time_list],
+                'repeats': repeats,
+                'pulse': pulse_str if has_pulse else None,
+                'is_ramp': False
+            })
     
     return channels, calib_factor
+
+
+def parse_ramp_for_visualization(ramp_str):
+    """
+    Parse RAMP command string for visualization.
+    
+    Supports both old and new formats:
+    - Old: 0,255,10000,100,L
+    - New: (L:0,255,10000),(X:0,255,5000|0,2)
+    
+    Returns dict with segments info for plotting.
+    """
+    import math
+    
+    segments = []
+    total_duration = 0
+    
+    # Check if new format (starts with parenthesis)
+    if ramp_str.startswith('('):
+        # New format: (L:0,255,1000),(X:0,255,10000|1,2)
+        # Find all segments in parentheses
+        seg_pattern = re.findall(r'\(([^)]+)\)', ramp_str)
+        
+        for seg_str in seg_pattern:
+            # Parse mode:params
+            colon_pos = seg_str.find(':')
+            if colon_pos == -1:
+                continue
+            
+            mode = seg_str[:colon_pos].strip()
+            params_str = seg_str[colon_pos + 1:].strip()
+            
+            # Check for t_range (after |)
+            t_start, t_end = 0.0, 1.0
+            if '|' in params_str:
+                params_str, t_range_str = params_str.split('|', 1)
+                t_parts = t_range_str.split(',')
+                if len(t_parts) >= 2:
+                    t_start = float(t_parts[0])
+                    t_end = float(t_parts[1])
+            
+            # Parse numeric params: start,end,duration[,steps]
+            parts = params_str.split(',')
+            if len(parts) >= 3:
+                start_pwm = int(parts[0])
+                end_pwm = int(parts[1])
+                duration_ms = int(parts[2])
+                steps = int(parts[3]) if len(parts) >= 4 else max(10, duration_ms // 50)
+                
+                # Set default t_range based on mode if not custom
+                if mode in ['O', '3']:  # Ease-out
+                    if t_start == 0.0 and t_end == 1.0:
+                        t_start, t_end = 1.0, 2.0
+                
+                segments.append({
+                    'mode': mode,
+                    'start_pwm': start_pwm,
+                    'end_pwm': end_pwm,
+                    'duration_ms': duration_ms,
+                    'steps': steps,
+                    't_start': t_start,
+                    't_end': t_end,
+                    'offset_ms': total_duration
+                })
+                total_duration += duration_ms
+    else:
+        # Old format: start,end,duration,steps,mode or segments separated by |
+        old_segments = ramp_str.split('|')
+        
+        for seg_str in old_segments:
+            seg_str = seg_str.strip()
+            if not seg_str:
+                continue
+            
+            parts = seg_str.split(',')
+            if len(parts) >= 4:
+                start_pwm = int(parts[0])
+                end_pwm = int(parts[1])
+                duration_ms = int(parts[2])
+                steps = int(parts[3])
+                mode = parts[4].strip() if len(parts) >= 5 else 'L'
+                
+                # Check for t_range in remaining parts
+                t_start, t_end = 0.0, 1.0
+                if len(parts) >= 7:
+                    t_start = float(parts[5])
+                    t_end = float(parts[6])
+                elif mode in ['O', '3']:
+                    t_start, t_end = 1.0, 2.0
+                
+                segments.append({
+                    'mode': mode,
+                    'start_pwm': start_pwm,
+                    'end_pwm': end_pwm,
+                    'duration_ms': duration_ms,
+                    'steps': steps,
+                    't_start': t_start,
+                    't_end': t_end,
+                    'offset_ms': total_duration
+                })
+                total_duration += duration_ms
+    
+    return {
+        'segments': segments,
+        'total_duration_ms': total_duration
+    }
 
 
 def calculate_current_position(channels, start_time):
@@ -242,12 +371,88 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
     
     channel_start_times_json = json.dumps(channel_start_times_display)
     
+    # Build intensity data for plotting
+    channel_intensity_data = {}
+    for ch_num, patterns in channels.items():
+        segments = []
+        for pattern in patterns:
+            repeats = pattern.get('repeats', 1)
+            if pattern.get('is_ramp') and pattern.get('ramp_segments'):
+                # Use RAMP segment data directly
+                for _ in range(repeats):
+                    for seg in pattern['ramp_segments']:
+                        segments.append({
+                            'start': seg.get('start_pwm', seg.get('start', 0)),
+                            'end': seg.get('end_pwm', seg.get('end', 255)),
+                            'duration': seg.get('duration_ms', seg.get('duration', 1000)),
+                            'mode': seg.get('mode', 'L'),
+                            't_start': seg.get('t_start', 0),
+                            't_end': seg.get('t_end', 1)
+                        })
+            elif any(0 < s < 255 for s in pattern.get('status', [])):
+                # Regular pattern with PWM values - create constant segments
+                for _ in range(repeats):
+                    for i, (status, time_ms) in enumerate(zip(pattern['status'], pattern['time_ms_original'])):
+                        if isinstance(status, int) and 0 < status < 255:
+                            # This is a PWM value
+                            segments.append({
+                                'start': status,
+                                'end': status,
+                                'duration': time_ms,
+                                'mode': 'L',
+                                't_start': 0,
+                                't_end': 1
+                            })
+                        elif status == 1 or status == 255:
+                            # ON state
+                            segments.append({
+                                'start': 255,
+                                'end': 255,
+                                'duration': time_ms,
+                                'mode': 'L',
+                                't_start': 0,
+                                't_end': 1
+                            })
+                        else:
+                            # OFF state
+                            segments.append({
+                                'start': 0,
+                                'end': 0,
+                                'duration': time_ms,
+                                'mode': 'L',
+                                't_start': 0,
+                                't_end': 1
+                            })
+            else:
+                # Regular ON/OFF patterns - include for complete timeline
+                for _ in range(repeats):
+                    for status, time_ms in zip(pattern.get('status', [0]), pattern.get('time_ms_original', [1000])):
+                        # Handle status value: 255 or 1 = ON (full brightness), 0 = OFF
+                        if status >= 1:
+                            pwm = 255 if status == 1 else status  # status could be a PWM value
+                        else:
+                            pwm = 0
+                        segments.append({
+                            'start': pwm,
+                            'end': pwm,
+                            'duration': time_ms,
+                            'mode': 'L',
+                            't_start': 0,
+                            't_end': 1
+                        })
+        
+        if segments:
+            channel_intensity_data[ch_num] = segments
+    
+    channel_intensity_json = json.dumps(channel_intensity_data)
+    
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Protocol Visualization - Light Controller v2.2</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
         * {{
             margin: 0;
@@ -717,8 +922,13 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             # Don't set current class statically - let JavaScript handle it dynamically
 
             # Use original (uncalibrated) times for all visualization math
-            cycle_duration_orig = sum(pattern['time_ms_original'])
-            total_duration_orig = cycle_duration_orig * pattern['repeats']
+            cycle_duration_orig = sum(pattern['time_ms_original']) if pattern['time_ms_original'] else 0
+            
+            # For RAMP patterns, cycle_duration_orig may be 0 - use total_duration instead
+            if cycle_duration_orig == 0 and pattern.get('total_duration', 0) > 0:
+                cycle_duration_orig = pattern['total_duration']
+            
+            total_duration_orig = cycle_duration_orig * pattern['repeats'] if cycle_duration_orig > 0 else 0
             
             # Check if this is a wait pattern (pattern 0)
             is_wait_pattern = (pattern['pattern'] == 0)
@@ -795,7 +1005,11 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             
             # Add timeline segments for all patterns (use uncalibrated/original durations)
             for s_idx, (state, duration) in enumerate(zip(pattern['status'], pattern['time_ms_original'])):
-                width_percent = (duration / cycle_duration_orig) * 100
+                # Avoid division by zero for RAMP patterns with empty time_ms_original
+                if cycle_duration_orig > 0:
+                    width_percent = (duration / cycle_duration_orig) * 100
+                else:
+                    width_percent = 100  # Single segment takes full width
                 
                 if pattern['pulse'] and state == 1:
                     state_class = 'pulsing'
@@ -844,6 +1058,25 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             
             current_time += total_duration_orig  # keep current_time in calibrated units unused, but advance by original
             current_time_orig += total_duration_orig
+        
+        # Add intensity plot for this channel if it has PWM/RAMP data
+        has_pwm_data = any(
+            (pattern.get('is_ramp') or any(0 < s < 255 for s in pattern['status']))
+            for pattern in channels[ch_num]
+        )
+        
+        if has_pwm_data:
+            html += f"""
+            <div class="intensity-plot-container" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px;">
+                <h3 style="margin-bottom: 10px; color: #667eea;">📈 Intensity Timeline</h3>
+                <div id="intensity-plot-ch{ch_num}" style="width: 100%; height: 250px;"></div>
+            </div>
+"""
+        
+        # Close channel section
+        html += """
+        </div>
+"""
     
     # Close channels container
     html += """
@@ -1454,6 +1687,117 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         // Initialize and start updates
         updateDisplay();
         setInterval(updateDisplay, 1000);
+    </script>
+    
+    <script>
+        // Intensity plotting functionality
+        function calculateEasedValue(progress, startPwm, endPwm, easing, tStart, tEnd) {{
+            // Map progress [0, 1] to t [tStart, tEnd]
+            const t = tStart + progress * (tEnd - tStart);
+            
+            // f(t) = (1 - cos(π * t)) / 2
+            const cosValue = (1 - Math.cos(Math.PI * t)) / 2;
+            
+            // Apply easing based on mode
+            let easedProgress;
+            if (easing === 'L') {{
+                easedProgress = progress;
+            }} else {{
+                easedProgress = cosValue;
+            }}
+            
+            return startPwm + easedProgress * (endPwm - startPwm);
+        }}
+        
+        function generateIntensityCurve(segments) {{
+            const times = [];
+            const intensities = [];
+            let currentTime = 0;
+            
+            segments.forEach(seg => {{
+                const numPoints = Math.max(50, Math.floor(seg.duration / 10));
+                
+                for (let i = 0; i <= numPoints; i++) {{
+                    const progress = i / numPoints;
+                    const time = currentTime + progress * seg.duration;
+                    const intensity = calculateEasedValue(
+                        progress,
+                        seg.start,
+                        seg.end,
+                        seg.mode,
+                        seg.t_start,
+                        seg.t_end
+                    );
+                    
+                    times.push(time / 1000);  // Convert to seconds
+                    intensities.push(intensity);
+                }}
+                
+                currentTime += seg.duration;
+            }});
+            
+            return {{ times, intensities }};
+        }}
+        
+        // Channel intensity data from Python
+        const channelIntensityData = {channel_intensity_json};
+        
+        // Render intensity plots for all channels
+        Object.keys(channelIntensityData).forEach(chNum => {{
+            const plotDiv = document.getElementById(`intensity-plot-ch${{chNum}}`);
+            if (!plotDiv) return;
+            
+            const segments = channelIntensityData[chNum];
+            if (!segments || segments.length === 0) return;
+            
+            const curve = generateIntensityCurve(segments);
+            
+            const trace = {{
+                x: curve.times,
+                y: curve.intensities,
+                type: 'scatter',
+                mode: 'lines',
+                fill: 'tozeroy',
+                fillcolor: 'rgba(102, 126, 234, 0.3)',
+                line: {{
+                    color: '#667eea',
+                    width: 2
+                }},
+                name: `Channel ${{chNum}} Intensity`
+            }};
+            
+            const layout = {{
+                title: {{
+                    text: `PWM Intensity Over Time`,
+                    font: {{ size: 14, color: '#333' }}
+                }},
+                xaxis: {{
+                    title: 'Time (seconds)',
+                    showgrid: true,
+                    gridcolor: '#e0e0e0',
+                    zeroline: true
+                }},
+                yaxis: {{
+                    title: 'PWM Value',
+                    range: [0, 260],
+                    showgrid: true,
+                    gridcolor: '#e0e0e0',
+                    zeroline: true
+                }},
+                margin: {{ t: 40, r: 20, b: 50, l: 60 }},
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                showlegend: false
+            }};
+            
+            const config = {{
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d', 'resetScale2d']
+            }};
+            
+            Plotly.newPlot(plotDiv, [trace], layout, config);
+        }});
     </script>
 </body>
 </html>

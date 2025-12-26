@@ -1,0 +1,110 @@
+# ===================================================================================
+# PWM AND RAMP PROTOCOL EXAMPLE (v2.2.3)
+# ===================================================================================
+# This file demonstrates PWM intensity control and RAMP gradient transitions
+# with easing functions and multi-segment support
+# 
+# Uses new parenthesized RAMP format (v2.2.3+)
+# ===================================================================================
+
+# ----------------------------------------------------------------------------
+# PATTERN COMMANDS WITH PWM VALUES (0-255)
+# ----------------------------------------------------------------------------
+# STATUS values can now be 0-255 for PWM intensity control:
+#   0   = OFF (0%)
+#   127 = Half brightness (50%)  
+#   255 = Full brightness (100%)
+
+# Channel 1: Intensity stepping demo
+# Step through different brightness levels
+PATTERN:1;CH:1;STATUS:0,64,127,191,255;TIME_MS:2000,2000,2000,2000,2000;REPEATS:2
+
+# Channel 1: Hold at 50% brightness
+PATTERN:2;CH:1;STATUS:127;TIME_MS:5000;REPEATS:1
+
+# ----------------------------------------------------------------------------
+# RAMP COMMANDS WITH EASING (Gradient Transitions)
+# ----------------------------------------------------------------------------
+# FORMAT: RAMP:(MODE:start,end,duration)
+# 
+# Easing modes:
+#   L = Linear (constant speed)
+#   C = Cosine (smooth S-curve, ease-in-out)
+#   I = Ease-In (slow start, fast end)
+#   O = Ease-Out (fast start, slow end)
+#   X = Custom t-range (X:duration|t_start,t_end)
+#   F = Custom function (F:func_name,duration)
+
+# Channel 2: Sunrise simulation with ease-in (slow start like real sunrise)
+PATTERN:1;CH:2;RAMP:(I:0,255,10000);REPEATS:1
+
+# Channel 2: Hold at full brightness
+PATTERN:2;CH:2;STATUS:255;TIME_MS:5000;REPEATS:1
+
+# Channel 2: Sunset simulation with ease-out (slow end like real sunset)
+PATTERN:3;CH:2;RAMP:(O:255,0,5000);REPEATS:1
+
+# ----------------------------------------------------------------------------
+# MULTI-SEGMENT RAMPS (Combined Transitions)
+# ----------------------------------------------------------------------------
+# Format: RAMP:(seg1),(seg2),(seg3)
+
+# Channel 3: Breathing effect with smooth cosine easing (10 cycles)
+# Rising phase + Falling phase combined in one command
+PATTERN:1;CH:3;RAMP:(C:25,230,2000),(C:230,25,2000);REPEATS:10
+
+# Channel 3: Complex multi-phase transition
+# Phase 1: Quick ease-in to 50%
+# Phase 2: Slow linear ramp to 100%
+# Phase 3: Hold at peak
+# Phase 4: Ease-out back to 25%
+PATTERN:2;CH:3;RAMP:(I:25,128,1000),(L:128,255,3000),(L:255,255,1000),(O:255,25,2000);REPEATS:3
+
+# ----------------------------------------------------------------------------
+# CUSTOM T-RANGE (X Mode)
+# ----------------------------------------------------------------------------
+# Format: RAMP:(X:duration|t_start,t_end)
+# t parameter: 0→1 (rise), 1→2 (fall), 0→2 (full breathing)
+
+# Channel 4: Full breathing using X mode
+PATTERN:1;CH:4;RAMP:(X:5000|0,1),(X:5000|1,2);REPEATS:2
+
+# ----------------------------------------------------------------------------
+# COMBINED PWM + PULSE (Pulsing at specific intensity)
+# ----------------------------------------------------------------------------
+# Channel 4: Pulse at 75% brightness (191/255)
+PATTERN:2;CH:4;STATUS:191,0;TIME_MS:500,500;REPEATS:10;PULSE:T1000pw500,T0pw0
+
+# ----------------------------------------------------------------------------
+# START_TIME (REQUIRED)
+# ----------------------------------------------------------------------------
+START_TIME: {'CH1': 30, 'CH2': 30, 'CH3': 30, 'CH4': 30}
+
+# ----------------------------------------------------------------------------
+# WAIT_STATUS (OPTIONAL - supports PWM values 0.0-1.0)
+# ----------------------------------------------------------------------------
+WAIT_STATUS: {'CH1': 0.1, 'CH2': 0, 'CH3': 0.05, 'CH4': 0}
+
+# ===================================================================================
+# NOTES ON PWM MODE
+# ===================================================================================
+# 
+# INPUT FORMATS:
+# - In protocol files: Use 0-255 integer for STATUS values
+# - For Excel files: Use 0.0-1.0 float in CH*_status columns (auto-converted)
+# 
+# HARDWARE REQUIREMENTS:
+# - Arduino pins must be PWM-capable (pins 2-13 on Due)
+# - Default pins 13, 12, 11, 10 are all PWM-capable
+# - LED driver must accept PWM input signal
+#
+# BACKWARD COMPATIBILITY:
+# - STATUS:0,1 still works (mapped to 0,255)
+# - Existing protocols work unchanged
+#
+# MEMORY EFFICIENCY:
+# - RAMP command: ~20 bytes (single command)
+# - Equivalent 100-step gradient: 800+ bytes (many STATUS values)
+# - Use RAMP for smooth transitions to save memory
+#
+# ===================================================================================

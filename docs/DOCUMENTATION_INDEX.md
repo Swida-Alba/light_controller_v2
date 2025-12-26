@@ -1,7 +1,7 @@
 # Documentation Index & Navigation Guide
 
-**Light Controller V2.2** - Complete Documentation Map  
-**Last Updated**: December 12, 2025
+**Light Controller V2.3** - Complete Documentation Map  
+**Last Updated**: December 26, 2025
 
 ---
 
@@ -12,7 +12,7 @@ This index organizes all documentation by **user journey** and **topic**. Find w
 - **New Users**: Start with 🚀 Getting Started
 - **Creating Protocols**: See 📖 Core Documentation
 - **Optimization**: See 🎯 Pattern Compression
-- **Troubleshooting**: See 🐛 Bug Fixes & 🛠️ Troubleshooting
+- **Troubleshooting**: See 🛠️ Troubleshooting
 - **Developers**: See 🏗️ Architecture & Development
 
 ### 📊 Visual Navigation
@@ -21,7 +21,11 @@ This index organizes all documentation by **user journey** and **topic**. Find w
 
 ### 📁 Project Organization
 
-**[→ Project Organization Summary](PROJECT_ORGANIZATION.md)** - Complete overview of file structure, documentation system, and navigation methods (60+ docs organized)
+**[→ Project Organization Summary](PROJECT_ORGANIZATION.md)** - Overview of file structure and documentation
+
+### 📦 Archived Documentation
+
+**[→ docs/archive/](archive/)** - Historical implementation notes, summaries, and superseded documentation
 
 ---
 
@@ -73,6 +77,7 @@ This index organizes all documentation by **user journey** and **topic**. Find w
 | Document | Use When | Time to Read |
 |----------|----------|--------------|
 | **[Protocol Formats](PROTOCOL_FORMATS.md)** | Creating any protocol | 20 min |
+| **[Protocol Syntax Reference](PROTOCOL_SYNTAX_REFERENCE.md)** | Detailed syntax & punctuation rules | 15 min |
 | **[Protocol Settings](PROTOCOL_SETTINGS.md)** | Configuring timing & calibration | 15 min |
 | **[Templates](TEMPLATES.md)** | Need a starting template | 5 min |
 | **[Features Overview](FEATURES.md)** | Understanding all capabilities | 25 min |

@@ -2,6 +2,9 @@
 
 Complete specification of Excel and Text protocol formats.
 
+> 📖 **For detailed syntax reference** (punctuation, placeholders, annotations):  
+> See [PROTOCOL_SYNTAX_REFERENCE.md](PROTOCOL_SYNTAX_REFERENCE.md)
+
 ---
 
 ## Table of Contents
@@ -33,6 +36,9 @@ Both formats support all features including:
 ---
 
 ## Excel Format
+
+> ⚠️ **LIMITATION**: Excel format does **NOT** support RAMP mode.  
+> For gradient/easing transitions, use [Text format](#text-format) with RAMP commands.
 
 ### Required Structure
 

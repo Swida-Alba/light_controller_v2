@@ -127,6 +127,30 @@ class LightControllerParser:
                     max_length = length
         return max_length
     
+    def _detect_max_ramp_segments_from_commands(self, commands):
+        """
+        Detect the maximum number of RAMP segments from generated commands.
+        
+        Args:
+            commands (list): List of command strings
+            
+        Returns:
+            int: Maximum number of RAMP segments in any single command
+        """
+        import re
+        max_segments = 0
+        for cmd in commands:
+            if 'RAMP:' in cmd:
+                # Extract RAMP part: RAMP:(...),...,(...)
+                ramp_match = re.search(r'RAMP:([^;]+)', cmd)
+                if ramp_match:
+                    ramp_str = ramp_match.group(1)
+                    # Count segments by counting opening parentheses
+                    segment_count = ramp_str.count('(')
+                    if segment_count > max_segments:
+                        max_segments = segment_count
+        return max_segments
+    
     def _evaluate_pattern_compression(self, df_ms, pattern_lengths=[2, 4, 8]):
         """
         Evaluate different pattern lengths and find the most efficient one.
@@ -257,12 +281,18 @@ class LightControllerParser:
             # Detect maximum pattern length from commands
             max_pattern_length = self._detect_pattern_length_from_commands(self.cmd_patterns)
             
+            # Detect maximum RAMP segments from commands
+            max_ramp_segments = self._detect_max_ramp_segments_from_commands(self.cmd_patterns)
+            
             if max_pattern_length > 0:
                 print(f"\n📏 Protocol pattern analysis:")
                 print(f"   Required PATTERN_LENGTH: {max_pattern_length}")
+                if max_ramp_segments > 0:
+                    print(f"   Required MAX_RAMP_SEGMENTS: {max_ramp_segments}")
                 
                 # Send greeting with pattern length verification
-                arduino_config = SendGreeting(self.ser, expected_pattern_length=max_pattern_length)
+                arduino_config = SendGreeting(self.ser, expected_pattern_length=max_pattern_length,
+                                              expected_max_ramp_segments=max_ramp_segments if max_ramp_segments > 0 else None)
                 
                 # Store arduino config for reference
                 self.arduino_config = arduino_config
@@ -287,6 +317,11 @@ class LightControllerParser:
                         f"but Arduino only supports {arduino_pl}. "
                         f"Update Arduino PATTERN_LENGTH constant and re-upload firmware."
                     )
+                
+                # Check RAMP segments (already done in SendGreeting, but print confirmation)
+                arduino_seg = arduino_config.get('max_ramp_segments', 0)
+                if max_ramp_segments > 0 and arduino_seg > 0:
+                    print(f"   Arduino MAX_RAMP_SEGMENTS: {arduino_seg}")
                 
                 print(f"   ✓ Verification passed\n")
             else:

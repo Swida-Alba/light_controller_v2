@@ -6,8 +6,8 @@
       "type": "lldb",
       "request": "launch",
       "args": [],
-      "cwd": "/Users/apple/Documents/GitHub/light_controller_v2.2",
-      "program": "/Users/apple/Documents/GitHub/light_controller_v2.2/build/Debug/outDebug"
+      "cwd": "/Users/apple/Documents/GitHub/light_controller_v2.2/light_controller_v2_2_arduino",
+      "program": "/Users/apple/Documents/GitHub/light_controller_v2.2/light_controller_v2_2_arduino/build/Debug/outDebug"
     }
   ]
 }

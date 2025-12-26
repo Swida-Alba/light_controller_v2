@@ -1,8 +1,146 @@
 # Changelog
 
-All notable changes to the Light Controller v2.2 project.
+All notable changes to the Light Controller v2.3 project.
 
-## [2.2.2] - 2025-12-12
+## [2.3.0] - 2025-12-26
+
+### Hardware Testing
+- **Arduino Due Verification**: Tested and verified full PWM/RAMP functionality on Arduino Due
+- **Real-time Monitoring**: Added `--monitor` flag to protocol_parser.py for live channel value capture
+- **$CHMON Integration**: Captured and validated PWM values during protocol execution
+- **Calibration Verified**: Arduino Due calibration factor 0.999949 (0.0051% timing accuracy)
+
+### Documentation
+- **Arduino Due Recommended**: Updated ARDUINO_SETUP.md to strongly recommend Arduino Due for PWM/RAMP mode
+- **Memory Requirements**: Documented that firmware uses ~12KB SRAM (Arduino Uno's 2KB insufficient)
+- **Quick Start Updated**: README.md now includes memory warnings and board recommendations
+- Archived 29 outdated documentation files (reduced from 61 to 32 active docs)
+- Created comprehensive doc archival system with README index
+- Reorganized examples/ folder with dedicated subfolders
+
+### Tools
+- **compare_monitored_data.py**: New utility to compare captured PWM values against expected protocol
+- **Protocol Parser CLI**: Added command-line arguments for port and protocol file
+- **Non-interactive Mode**: Calibration auto-confirms stored values when stdin is not a tty
+
+### Bug Fixes
+- **viz_protocol_html.py**: Fixed ZeroDivisionError for RAMP patterns with empty time_ms
+- **serial_monitor.py**: Fixed variable name bugs (`serial_conn` → `serial`, `disconnect` → `close`)
+- **lcfunc.py**: SetUpSerialPort() now accepts explicit port parameter
+
+### Examples
+- **1min_test.txt**: New quick test protocol (60s, 2 channels, RAMP + blink)
+- **5min_pwm_ramp_demo.txt**: Longer demo protocol with multiple pattern types
+- Created `ramp_easing/` subfolder for RAMP and easing mode demonstrations
+- Fixed obsolete PULSE syntax (trailing commas) in clean_protocol.txt and complete_protocol.txt
+- Updated pwm_ramp_protocol.txt from legacy to v2.2.3+ parenthesized RAMP format
+- Removed redundant Excel files from examples root
+- Created comprehensive READMEs for all example subfolders
+
+### Maintenance
+- Updated all documentation to reference v2.3.0
+- Cleaned up outdated version references
+- Improved documentation discoverability
+
+## [2.2.3] - 2025-12-25
+
+### Added - New Command Format
+- **Parenthesized Segments**: New cleaner format `(MODE:start,end,duration[,steps][|t_start,t_end])`
+- **Auto Steps Calculation**: Steps are now optional and auto-calculated based on duration
+- **Custom t Range**: Specify t range directly after `|` instead of extra parameters
+- **Multi-Segment Clarity**: Segments separated by commas in parentheses: `(L:0,255,1000),(O:255,0,1000)`
+
+### Added - Unified Cosine Formula
+- **Single Formula**: `f(t) = (1 - cos(πt)) / 2` for all easing modes
+- **Extended t Range**: Now t ∈ [0, 2] for complete cycle: 0→1→0
+- **Mode t Mappings**:
+  - Ease-In (I): t = [0, 1] → 0 to 1 (accelerating)
+  - Ease-Out (O): t = [1, 2] → 1 to 0 (decelerating, inverted)
+  - Full Cycle (X): t = [0, 2] → 0 to 1 to 0 (breathing)
+
+### Added - Interactive Visualization
+- **Jupyter Notebook**: `docs/easing_curves_visualization.ipynb` with Plotly charts
+- **Mode Comparisons**: Side-by-side visualization of all easing modes
+- **Custom t Range Explorer**: Interactive widget to experiment with t values
+- **Multi-Segment Simulator**: Preview complex ramp patterns
+
+### Added - HTML Intensity Plots
+- **Plotly Integration**: viz_protocol_html.py now includes embedded Plotly charts
+- **Intensity Timeline**: Per-channel PWM value over time visualization
+- **RAMP Parsing**: Full support for new command format in visualizer
+- **Interactive Charts**: Zoom, pan, and hover for detailed inspection
+
+### Python API Updates
+- **`calculate_eased_value()`**: Updated for unified formula with t_start/t_end
+- **`generate_ramp_segment_new()`**: New function for parenthesized format
+- **`create_breathing_ramp()`**: Helper for t=[0,2] breathing patterns
+- **`new_format=True`**: Parameter on existing functions for new format output
+
+### Documentation
+- **Updated PWM_RAMP_CONTROL.md**: New format examples, formula explanation
+- **Added easing_curves_visualization.ipynb**: Interactive Jupyter notebook
+
+---
+
+## [2.2.2] - 2025-06-06
+
+### Added - Easing Functions for RAMP
+- **Cosine Easing**: `f(t) = (1 - cos(πt)) / 2` for smooth S-curve transitions
+- **Ease-In**: `f(t) = 1 - cos(πt/2)` for slow start, fast end
+- **Ease-Out**: `f(t) = sin(πt/2)` for fast start, slow end  
+- **Custom Easing**: Specify any portion of cosine curve with custom t range (radians)
+- **Easing Mode Parameter**: Added optional mode to RAMP command: `RAMP:start,end,duration,steps,MODE`
+  - `L` = Linear (default), `C` = Cosine, `I` = Ease-In, `O` = Ease-Out, `X` = Custom
+
+### Added - Multi-Segment RAMP
+- **Combined Segments**: Chain multiple ramp segments with `|` separator
+- **Format**: `RAMP:seg1|seg2|seg3` where each segment = `start,end,duration,steps,mode`
+- **MAX_RAMP_SEGMENTS**: Up to 4 segments per pattern
+- **Seamless Transitions**: Arduino automatically handles segment transitions
+
+### Added - Python Easing Utilities
+- **`calculate_eased_value()`**: Preview eased PWM values in Python
+- **`generate_ramp_segment()`**: Generate single segment strings
+- **`generate_multi_ramp_command()`**: Generate multi-segment RAMP commands
+- **`create_fade_in_out_ramp()`**: Convenience function for common fade patterns
+- **`create_cosine_wave_ramp()`**: Convenience function for breathing effects
+
+### Arduino Enhancements
+- **`calculateEasedValue()`**: New function implementing all easing formulas
+- **`RampSegment` struct**: New struct with easing parameters (easing_mode, t_start, t_end)
+- **`RampPattern.segments[]`**: Array of segments for multi-segment support
+- **`rampCurrentSegment[]`**: Track current segment per channel during execution
+
+### Documentation
+- **Updated PWM_RAMP_CONTROL.md**: Added easing functions and multi-segment documentation
+- **Updated pwm_ramp_protocol.txt**: New examples with easing and multi-segment patterns
+
+## [2.2.1] - 2024-12-25
+
+### Added - PWM Intensity Control
+- **PWM Status Values**: STATUS can now be 0-255 (not just 0/1) for variable light intensity
+- **Float Input Support**: Protocol files accept 0.0-1.0 float values (auto-converted to 0-255)
+- **Backward Compatible**: Legacy binary 0/1 values still work (mapped to 0/255)
+- **`convert_status_to_pwm()`**: New utility function for consistent PWM conversion
+
+### Added - RAMP Gradient Transitions
+- **RAMP Command**: New command format `RAMP:<start>,<end>,<duration_ms>,<steps>` for smooth transitions
+- **Arduino-Side Interpolation**: Ramps execute smoothly on Arduino without sending individual steps
+- **Memory Efficient**: Single RAMP command replaces 100+ individual pattern steps
+- **Auto-Step Calculation**: Default 1 step per 100ms if steps not specified
+
+### Added - Arduino PWM Mode
+- **PWM_RAMP_MODE**: Compile-time flag to enable PWM intensity control
+- **`setChannelOutput()`**: New function using `analogWrite()` for PWM output
+- **`executeRamp()`**: New function for smooth RAMP interpolation during execution
+- **`parse_ramp_pattern()`**: New function to parse RAMP commands
+- **Greeting Updated**: Hello response now reports `PWM_RAMP_MODE:1` capability
+
+### Documentation
+- **PWM_RAMP_CONTROL.md**: Comprehensive guide for PWM and RAMP features
+- **pwm_ramp_protocol.txt**: Example protocol demonstrating new features
+
+## [2.2.0] - 2024-12-12
 
 ### Fixed - Serial Communication
 - **PULSE Command Truncation**: Fixed issue where long PULSE commands (e.g., `T986pw98,T0pw0`) were being truncated during serial transmission

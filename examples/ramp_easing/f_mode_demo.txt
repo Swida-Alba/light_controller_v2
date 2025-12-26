@@ -1,0 +1,136 @@
+# ===================================================================================
+# F MODE CUSTOM FUNCTIONS EXAMPLE (v2.2.3)
+# ===================================================================================
+# Demonstrates all built-in custom functions available in F mode
+# 
+# Use with:
+#   python mock_arduino.py examples/f_mode_demo.txt --plot
+#   python mock_arduino.py examples/f_mode_demo.txt --plot --custom-funcs light_controller_v2_2_arduino/custom_easing.h
+# ===================================================================================
+
+# ============================================================================
+# WAVEFORM FUNCTIONS
+# ============================================================================
+
+# sine_wave: Half sine wave (0 → 255 → 0)
+# Perfect for smooth single-bump effects
+PATTERN:1;CH:1;RAMP:(F:sine_wave,4000);REPEATS:3
+
+# double_sine: Two complete bumps (0 → 255 → 0 → 255 → 0)
+# Creates a double-pulse effect
+PATTERN:1;CH:2;RAMP:(F:double_sine,4000);REPEATS:2
+
+# breathing: Smooth cosine in-out cycle
+# Most natural breathing effect
+PATTERN:1;CH:3;RAMP:(F:breathing,5000);REPEATS:3
+
+# ============================================================================
+# ATTENTION-GRABBING EFFECTS
+# ============================================================================
+
+# heartbeat: Lub-dub cardiac pattern
+# Two quick pulses close together, then pause
+PATTERN:1;CH:4;RAMP:(F:heartbeat,1500);REPEATS:8
+
+# bounce: Damped oscillation (ball bounce)
+# Decreasing bounces, great for alerts
+PATTERN:1;CH:5;RAMP:(F:bounce,3000);REPEATS:4
+
+# flicker: Irregular random-like pattern
+# Simulates candle or unstable light
+PATTERN:1;CH:6;RAMP:(F:flicker,2000);REPEATS:5
+
+# ============================================================================
+# TRANSITION FUNCTIONS
+# ============================================================================
+
+# exp_decay: Sharp start, gradual decay (255 → ~12)
+# Flash then fade effect
+PATTERN:1;CH:7;RAMP:(F:exp_decay,3000);REPEATS:3
+
+# log_rise: Slow start, accelerating finish (0 → 255)
+# Gradual rise to full brightness
+PATTERN:1;CH:8;RAMP:(F:log_rise,3000);REPEATS:3
+
+# ============================================================================
+# PATTERN FUNCTIONS (Can continue on fewer channels if needed)
+# ============================================================================
+
+# sawtooth: 3 linear cycles (0→255→0→255→0→255)
+# Repeating ramp pattern
+PATTERN:2;CH:1;RAMP:(F:sawtooth,3000);REPEATS:2
+
+# step_50: Jumps to full at 50% progress
+# Binary step function
+PATTERN:2;CH:2;RAMP:(F:step_50,2000);REPEATS:3
+
+# ============================================================================
+# COMBINING F MODE WITH OTHER MODES
+# ============================================================================
+
+# Mix: Linear fade-in → Heartbeat effect → Linear fade-out
+PATTERN:2;CH:3;RAMP:(L:0,255,2000),(F:heartbeat,4000),(L:255,0,2000);REPEATS:2
+
+# Mix: Ease-in start → Flicker middle → Ease-out end
+PATTERN:2;CH:4;RAMP:(I:0,255,1500),(F:flicker,3000),(O:255,0,1500);REPEATS:2
+
+# ============================================================================
+# F MODE SEQUENCES
+# ============================================================================
+
+# Sequence: breathing → bounce → heartbeat
+PATTERN:2;CH:5;RAMP:(F:breathing,3000),(F:bounce,2000),(F:heartbeat,2000);REPEATS:2
+
+# Sequence: exp_decay → log_rise (flash then slow recover)
+PATTERN:2;CH:6;RAMP:(F:exp_decay,2000),(F:log_rise,3000);REPEATS:3
+
+# ============================================================================
+# ALL FUNCTIONS SHOWCASE (One channel, all functions)
+# ============================================================================
+
+# All 10 functions in sequence
+PATTERN:2;CH:7;RAMP:(F:sine_wave,1500),(F:double_sine,1500),(F:bounce,1500),(F:heartbeat,1500),(F:exp_decay,1500),(F:log_rise,1500),(F:step_50,1000),(F:sawtooth,1500),(F:breathing,1500),(F:flicker,1500);REPEATS:1
+
+PATTERN:2;CH:8;RAMP:(F:breathing,6000);REPEATS:3
+
+# ============================================================================
+# START_TIME (REQUIRED)
+# ============================================================================
+START_TIME: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0, 'CH5': 0, 'CH6': 0, 'CH7': 0, 'CH8': 0}
+
+# ============================================================================
+# EXPECTED OUTPUT
+# ============================================================================
+# CH1: 3x sine_wave (12s) + 2x sawtooth (6s)
+# CH2: 2x double_sine (8s) + 3x step_50 (6s)
+# CH3: 3x breathing (15s) + 2x mixed (16s)
+# CH4: 8x heartbeat (12s) + 2x mixed (12s)
+# CH5: 4x bounce (12s) + 2x sequence (14s)
+# CH6: 5x flicker (10s) + 3x exp+log (15s)
+# CH7: 3x exp_decay (9s) + 1x all functions (~14s)
+# CH8: 3x log_rise (9s) + 3x breathing (18s)
+
+# ===================================================================================
+# F MODE FORMAT SUMMARY
+# ===================================================================================
+#
+# Format: (F:function_name,duration_ms)
+#
+# • Only 2 parameters (no start/end PWM)
+# • Function determines entire curve shape
+# • progress = elapsed_time / duration_ms (0→1)
+# • PWM clipped to [0, 255] automatically
+#
+# Available functions:
+#   sine_wave   - Half sine: 0→255→0
+#   double_sine - Two bumps: 0→255→0→255→0
+#   bounce      - Ball bounce (damped oscillation)
+#   heartbeat   - Lub-dub cardiac pattern
+#   exp_decay   - Sharp start, slow fade (255→~12)
+#   log_rise    - Slow start, fast end (0→255)
+#   step_50     - Binary step at 50%
+#   sawtooth    - 3 linear ramp cycles
+#   breathing   - Smooth cosine in-out
+#   flicker     - Irregular oscillation
+#
+# ===================================================================================
