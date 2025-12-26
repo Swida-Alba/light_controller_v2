@@ -6,15 +6,92 @@ to parse and execute LED control protocols.
 
 The new class-based approach makes the code much cleaner and more maintainable.
 For details, see light_controller_parser.py
+
+=============================================================================
+CONFIGURATION OPTIONS
+=============================================================================
+
+There are TWO ways to configure this script:
+
+1. IN-FILE SETTINGS (edit the DEFAULT_* variables below):
+   - Good for repeated use with the same hardware setup
+   - No need to type long command-line arguments each time
+   
+2. COMMAND-LINE ARGUMENTS (override in-file settings):
+   - Good for one-off runs or scripting
+   - Takes precedence over in-file settings
+
+=============================================================================
+USAGE EXAMPLES
+=============================================================================
+
+# Using in-file defaults (after setting DEFAULT_PORT and DEFAULT_PROTOCOL_FILE):
+python protocol_parser.py
+
+# Override with command-line arguments:
+python protocol_parser.py [pattern_length] [port] [protocol_file] [--monitor]
+
+# Examples:
+python protocol_parser.py 2
+python protocol_parser.py 2 /dev/cu.usbmodem1101
+python protocol_parser.py 2 /dev/cu.usbmodem1101 examples/1min_test.txt
+python protocol_parser.py 2 /dev/cu.usbmodem1101 examples/1min_test.txt --monitor
+
+# --monitor flag can appear anywhere:
+python protocol_parser.py --monitor 2 /dev/cu.usbmodem1101 examples/1min_test.txt
+
+=============================================================================
+FLAGS
+=============================================================================
+
+--monitor    Enable real-time monitoring of Arduino $CHMON messages after
+             protocol upload. Displays live PWM values and saves to CSV.
+             Press Ctrl+C to stop monitoring.
+
+=============================================================================
 """
 
 from light_controller_parser import LightControllerParser
-import tkinter as tk
-from tkinter import filedialog
 import sys
 import os
 import subprocess
 from datetime import datetime
+
+# File dialog - use PyQt6, fallback to tkinter
+try:
+    from PyQt6.QtWidgets import QApplication, QFileDialog
+    USE_PYQT = True
+except ImportError:
+    import tkinter as tk
+    from tkinter import filedialog
+    USE_PYQT = False
+
+
+# =============================================================================
+# IN-FILE SETTINGS - Edit these for your default configuration
+# =============================================================================
+
+# Default pattern length (number of patterns per channel)
+# Set to None to use default value of 2
+DEFAULT_PATTERN_LENGTH = 2
+
+# Default serial port for Arduino connection
+# Examples:
+#   macOS:   '/dev/cu.usbmodem1101' or '/dev/cu.usbmodem14301'
+#   Windows: 'COM3' or 'COM4'
+#   Linux:   '/dev/ttyACM0' or '/dev/ttyUSB0'
+# Set to None to auto-detect or use file dialog
+DEFAULT_PORT = None
+
+# Default protocol file path (relative or absolute)
+# Examples:
+#   'examples/1min_test.txt'
+#   'examples/auto_calibration/simple_blink_example.txt'
+#   '/Users/username/protocols/my_protocol.txt'
+# Set to None to use file dialog
+DEFAULT_PROTOCOL_FILE = None
+
+# =============================================================================
 
 
 if __name__ == '__main__':
@@ -23,9 +100,11 @@ if __name__ == '__main__':
     try:
         # Parse command line arguments
         # Usage: python protocol_parser.py [pattern_length] [port] [protocol_file] [--monitor]
-        pattern_length = 2  # Default value
-        port = None
-        protocol_file = None
+        # Command-line args override in-file DEFAULT_* settings
+        
+        pattern_length = DEFAULT_PATTERN_LENGTH or 2
+        port = DEFAULT_PORT
+        protocol_file = DEFAULT_PROTOCOL_FILE
         monitor_mode = '--monitor' in sys.argv
         
         # Remove --monitor from argv for positional argument parsing
@@ -34,27 +113,37 @@ if __name__ == '__main__':
         if len(args) > 1:
             try:
                 pattern_length = int(args[1])
-                print(f'Using pattern_length: {pattern_length}')
+                print(f'Using pattern_length: {pattern_length} (from command line)')
             except ValueError:
                 print(f'Error: Invalid pattern_length "{args[1]}". Must be an integer.')
                 print('Usage: python protocol_parser.py [pattern_length] [port] [protocol_file] [--monitor]')
                 print('Example: python protocol_parser.py 2 /dev/cu.usbmodem1101 protocol.txt --monitor')
                 sys.exit(1)
+        elif DEFAULT_PATTERN_LENGTH:
+            print(f'Using pattern_length: {pattern_length} (from in-file setting)')
         else:
             print(f'Using default pattern_length: {pattern_length}')
         
-        # Get port from command line if provided
+        # Get port from command line if provided, otherwise use in-file default
         if len(args) > 2:
             port = args[2]
-            print(f'Using port: {port}')
+            print(f'Using port: {port} (from command line)')
+        elif DEFAULT_PORT:
+            print(f'Using port: {port} (from in-file setting)')
         
-        # Get protocol file from command line if provided
+        # Get protocol file from command line if provided, otherwise use in-file default
         if len(args) > 3:
             protocol_file = args[3]
             if not os.path.exists(protocol_file):
                 print(f'Error: Protocol file not found: {protocol_file}')
                 sys.exit(1)
-            print(f'Using protocol file: {protocol_file}')
+            print(f'Using protocol file: {protocol_file} (from command line)')
+        elif DEFAULT_PROTOCOL_FILE:
+            if not os.path.exists(protocol_file):
+                print(f'Warning: In-file protocol file not found: {protocol_file}')
+                protocol_file = None
+            else:
+                print(f'Using protocol file: {protocol_file} (from in-file setting)')
         
         if monitor_mode:
             print('Monitor mode: ENABLED (will capture $CHMON data after execution)')
@@ -62,10 +151,22 @@ if __name__ == '__main__':
         # If no protocol file provided, use file dialog
         if not protocol_file:
             print('\nPlease select your protocol file...')
-            protocol_file = filedialog.askopenfilename(
-                title='Select the protocol file',
-                filetypes=[('Protocol files', '*.xlsx *.txt'), ('Excel files', '*.xlsx'), ('Text files', '*.txt')]
-            )
+            
+            if USE_PYQT:
+                # Use PyQt6 file dialog
+                app = QApplication.instance() or QApplication(sys.argv)
+                protocol_file, _ = QFileDialog.getOpenFileName(
+                    None,
+                    'Select the protocol file',
+                    '',
+                    'Protocol files (*.xlsx *.txt);;Excel files (*.xlsx);;Text files (*.txt);;All files (*)'
+                )
+            else:
+                # Fallback to tkinter
+                protocol_file = filedialog.askopenfilename(
+                    title='Select the protocol file',
+                    filetypes=[('Protocol files', '*.xlsx *.txt'), ('Excel files', '*.xlsx'), ('Text files', '*.txt')]
+                )
         
         if not protocol_file:
             print('No file selected. Exiting.')
@@ -140,58 +241,88 @@ if __name__ == '__main__':
                     # Send Bye command to start execution (but don't close connection)
                     from lcfunc import SayBye
                     SayBye(parser.ser)
-                    print('\n📊 Monitoring channel values (Ctrl+C to stop)...\n')
                     
                     monitor_csv = commands_file.replace('.txt', '_monitored.csv')
-                    csv_file = open(monitor_csv, 'w')
-                    csv_file.write("timestamp,time_ms,CH1,CH2,CH3,CH4,CH5,CH6,CH7,CH8\n")
-                    start_time = datetime.now()
-                    last_print_time = 0
                     
+                    # Try to use PyQtGraph real-time plot window
                     try:
-                        while True:
-                            if parser.ser and parser.ser.in_waiting:
-                                line = parser.ser.readline().decode('utf-8', errors='ignore').strip()
-                                if line.startswith('$CHMON:'):
-                                    # Parse: $CHMON:CH1:pwm1,CH2:pwm2,...
-                                    elapsed = (datetime.now() - start_time).total_seconds()
-                                    channels = {}
-                                    for ch_data in line[7:].split(','):
-                                        parts = ch_data.split(':')
-                                        if len(parts) == 2:
-                                            ch_num = int(parts[0][2:])
-                                            channels[ch_num] = int(parts[1])
-                                    
-                                    # Write to CSV
-                                    timestamp = datetime.now().isoformat()
-                                    values = [channels.get(i, 0) for i in range(1, 9)]
-                                    csv_file.write(f"{timestamp},{elapsed*1000:.0f},{','.join(map(str, values))}\n")
-                                    csv_file.flush()
-                                    
-                                    # Print status every 0.5 seconds
-                                    if elapsed - last_print_time >= 0.5:
-                                        status = f"⏱️  {elapsed:6.1f}s | "
-                                        for ch in range(1, min(5, len(channels)+1)):
-                                            pwm = channels.get(ch, 0)
-                                            bar_len = pwm // 25
-                                            bar = '█' * bar_len + '░' * (10 - bar_len)
-                                            status += f"CH{ch}: {pwm:3d} [{bar}] | "
-                                        print(status)
-                                        last_print_time = elapsed
-                                elif line and not line.startswith('$'):
-                                    print(f"  < {line}")
+                        from realtime_plot import run_realtime_plot, PYQTGRAPH_AVAILABLE
+                        
+                        if PYQTGRAPH_AVAILABLE:
+                            print('\n📊 Launching real-time PWM visualization window...')
+                            print('   (Close window or press Ctrl+C to stop)\n')
+                            
+                            result = run_realtime_plot(
+                                serial_port=parser.ser,
+                                csv_output=monitor_csv,
+                                num_channels=3  # Match Arduino MAX_CHANNEL_NUM
+                            )
+                            
+                            if result:
+                                app, window = result
+                                app.exec()  # Run Qt event loop (blocking)
+                                print(f'\n📊 Data saved to: {monitor_csv}')
                             else:
-                                import time
-                                time.sleep(0.01)
-                    except KeyboardInterrupt:
-                        print(f'\n\n⏹️  Monitoring stopped')
-                        print(f'📊 Data saved to: {monitor_csv}')
-                    finally:
-                        csv_file.close()
-                        # Close serial and mark as closed to prevent double-Bye
-                        if parser.ser:
-                            parser.ser.close()
-                            parser.ser = None
+                                raise ImportError("PyQtGraph not available")
+                        else:
+                            raise ImportError("PyQtGraph not available")
+                            
+                    except ImportError:
+                        # Fallback to text-mode monitoring
+                        print('\n📊 Monitoring channel values (text mode)...')
+                        print('   Install pyqtgraph for graphical display: pip install pyqtgraph PyQt6')
+                        print('   Press Ctrl+C to stop\n')
+                        
+                        csv_file = open(monitor_csv, 'w')
+                        csv_file.write("timestamp,time_ms,CH1,CH2,CH3,CH4,CH5,CH6,CH7,CH8\n")
+                        start_time = datetime.now()
+                        last_print_time = 0
+                        
+                        try:
+                            while True:
+                                if parser.ser and parser.ser.in_waiting:
+                                    line = parser.ser.readline().decode('utf-8', errors='ignore').strip()
+                                    if line.startswith('$CHMON:'):
+                                        # Parse: $CHMON:CH1:pwm1,CH2:pwm2,...
+                                        elapsed = (datetime.now() - start_time).total_seconds()
+                                        channels = {}
+                                        for ch_data in line[7:].split(','):
+                                            parts = ch_data.split(':')
+                                            if len(parts) == 2:
+                                                ch_num = int(parts[0][2:])
+                                                channels[ch_num] = int(parts[1])
+                                        
+                                        # Write to CSV
+                                        timestamp = datetime.now().isoformat()
+                                        values = [channels.get(i, 0) for i in range(1, 9)]
+                                        csv_file.write(f"{timestamp},{elapsed*1000:.0f},{','.join(map(str, values))}\n")
+                                        csv_file.flush()
+                                        
+                                        # Print status every 0.5 seconds
+                                        if elapsed - last_print_time >= 0.5:
+                                            status = f"⏱️  {elapsed:6.1f}s | "
+                                            for ch in range(1, min(5, len(channels)+1)):
+                                                pwm = channels.get(ch, 0)
+                                                bar_len = pwm // 25
+                                                bar = '█' * bar_len + '░' * (10 - bar_len)
+                                                status += f"CH{ch}: {pwm:3d} [{bar}] | "
+                                            print(status)
+                                            last_print_time = elapsed
+                                    elif line and not line.startswith('$'):
+                                        print(f"  < {line}")
+                                else:
+                                    import time
+                                    time.sleep(0.01)
+                        except KeyboardInterrupt:
+                            print(f'\n\n⏹️  Monitoring stopped')
+                            print(f'📊 Data saved to: {monitor_csv}')
+                        finally:
+                            csv_file.close()
+                    
+                    # Close serial and mark as closed to prevent double-Bye
+                    if parser.ser:
+                        parser.ser.close()
+                        parser.ser = None
                 
     except Exception as e:
         import traceback

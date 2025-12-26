@@ -2,32 +2,102 @@
 
 ## Overview
 
-The serial monitor tool provides real-time visualization of Arduino channel PWM values during protocol execution. It reads Arduino serial output, displays live channel values, and can generate interactive plots.
+The Light Controller provides multiple tools for real-time monitoring of Arduino PWM values during protocol execution:
+
+1. **`--monitor` flag** (integrated with protocol_parser.py) - Recommended for most users
+2. **`realtime_plot.py`** - Standalone PyQtGraph-based visualization
+3. **`serial_monitor.py`** - Dash-based web visualization
 
 **Features:**
 - 📊 Real-time channel value display with visual bars
-- 📈 Live Plotly visualization
-- 💾 Optional CSV logging for data analysis
+- 📈 Live graphical visualization (PyQtGraph or Plotly)
+- 💾 Automatic CSV logging for data analysis
 - 🔌 Automatic serial port detection
-- ⚡ Configurable monitoring interval
+- ⚡ High-performance rendering (up to 100Hz)
+
+---
+
+## Quick Start: Using --monitor Flag
+
+The easiest way to monitor PWM values is with the `--monitor` flag:
+
+```bash
+python protocol_parser.py 2 /dev/cu.usbmodem1101 examples/1min_test.txt --monitor
+```
+
+This will:
+1. Upload the protocol to Arduino
+2. Open a real-time visualization window (if PyQtGraph installed)
+3. Save all data to a CSV file
+
+The `--monitor` flag can appear anywhere in the command:
+```bash
+python protocol_parser.py --monitor 2 /dev/cu.usbmodem1101 protocol.txt
+```
 
 ---
 
 ## Installation
 
-### Prerequisites
+### Required (for any monitoring)
 
 ```bash
-pip install pyserial plotly
+pip install pyserial
 ```
 
-### Files
+### Recommended (for graphical visualization)
 
-- `serial_monitor.py` - Main monitoring tool
+```bash
+pip install pyqtgraph PyQt6
+```
+
+### Alternative (for web-based visualization)
+
+```bash
+pip install plotly dash
+```
 
 ---
 
-## Usage
+## Tools Overview
+
+### 1. --monitor Flag (Recommended)
+
+Built into `protocol_parser.py`. Automatically:
+- Uses PyQtGraph if available (fast, native window)
+- Falls back to text-mode if PyQtGraph not installed
+- Saves data to `*_monitored.csv`
+
+```bash
+# Full command with all options
+python protocol_parser.py [pattern_length] [port] [protocol_file] --monitor
+
+# Example
+python protocol_parser.py 2 /dev/cu.usbmodem1101 examples/1min_test.txt --monitor
+```
+
+### 2. realtime_plot.py (Standalone)
+
+Use for monitoring without running a protocol:
+
+```bash
+python realtime_plot.py --port /dev/cu.usbmodem1101
+python realtime_plot.py --port COM3 --output data.csv
+python realtime_plot.py --port /dev/ttyACM0 --channels 2
+```
+
+### 3. serial_monitor.py (Web-based)
+
+For web browser visualization:
+
+```bash
+python serial_monitor.py
+python serial_monitor.py --port /dev/cu.usbmodem14301 --output data.csv
+```
+
+---
+
+## Detailed Usage
 
 ### Basic Monitoring
 
