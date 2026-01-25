@@ -99,21 +99,34 @@ def format_section_time(ms):
 
 
 def parse_commands(commands_file):
-    """Parse commands file and extract pattern data and calibration factor."""
+    """Parse commands file and extract pattern data, calibration factor, loop info, and channel types."""
     channels = {}
     calib_factor = 1.0  # Default calibration factor
+    loop_info = {}  # LOOP settings per channel
+    channel_types = ''  # Channel types string (e.g., 'MMMM' for 4 MCP4728 channels)
     
     with open(commands_file, 'r') as f:
         lines = f.readlines()
     
-    # First, extract calibration factor from header
+    # First, extract calibration factor, LOOP info, and channel types from header
     for line in lines:
         if line.startswith('# Calibration Factor:'):
             try:
                 calib_factor = float(line.split(':')[1].strip())
             except (ValueError, IndexError):
                 pass
-            break
+        elif line.startswith('# LOOP:'):
+            try:
+                import ast
+                loop_str = line.split('# LOOP:', 1)[1].strip()
+                loop_info = ast.literal_eval(loop_str)
+            except (ValueError, SyntaxError, IndexError):
+                pass
+        elif line.startswith('# Channel Types:'):
+            try:
+                channel_types = line.split(':', 1)[1].strip()
+            except (IndexError):
+                pass
     
     # Then parse commands
     for line in lines:
@@ -139,7 +152,8 @@ def parse_commands(commands_file):
         
         # Check for RAMP command (new format)
         ramp_match = re.search(r'RAMP:([^;]+)', line)
-        status_match = re.search(r'STATUS:([\d,]+)', line)
+        # STATUS can include decimal values (0.2) for normalized values
+        status_match = re.search(r'STATUS:([\d.,]+)', line)
         time_match = re.search(r'TIME_MS:([\d.,]+)', line)
         
         if not pattern_match or not repeats_match:
@@ -168,8 +182,17 @@ def parse_commands(commands_file):
                 'ramp_total_duration': ramp_data['total_duration_ms']
             })
         elif status_match and time_match:
-            # Standard STATUS/TIME_MS command
-            status_list = [int(s) for s in status_match.group(1).split(',')]
+            # Standard STATUS/TIME_MS command - preserve original values (can be float like 1.0)
+            status_str = status_match.group(1)
+            status_list = []
+            for s in status_str.split(','):
+                s = s.strip()
+                # Keep as float if it has decimal point, otherwise int
+                if '.' in s:
+                    status_list.append(float(s))
+                else:
+                    status_list.append(int(s))
+            
             time_list = [float(t) for t in time_match.group(1).split(',')]
             
             channels[ch_num].append({
@@ -184,7 +207,75 @@ def parse_commands(commands_file):
                 'is_ramp': False
             })
     
-    return channels, calib_factor
+    # Convert loop_info keys from 'CH1' to 1 (int) to match channels dict
+    loop_channels = {}
+    for ch_name, loop_val in loop_info.items():
+        if ch_name.startswith('CH'):
+            ch_num = int(ch_name[2:])
+            loop_channels[ch_num] = loop_val
+    
+    return channels, calib_factor, loop_channels, channel_types
+
+
+def get_channel_max_value(ch_num, channel_types):
+    """
+    Get the maximum value for a channel based on its type.
+    
+    Args:
+        ch_num: Channel number (1-based)
+        channel_types: String of channel types (e.g., 'MMMM', 'PPPP', 'PMMD')
+    
+    Returns:
+        int: Maximum value (1 for Binary, 255 for PWM, 4095 for DAC/MCP4728)
+    """
+    if not channel_types or ch_num > len(channel_types):
+        return 255  # Default to PWM
+    
+    ch_type = channel_types[ch_num - 1]  # 0-based index
+    if ch_type == 'B':
+        return 1
+    elif ch_type in ('D', 'M'):
+        return 4095
+    else:  # 'P' or unknown
+        return 255
+
+
+def normalize_status_value(value, ch_num, channel_types):
+    """
+    Normalize a status value to 0.0-1.0 range based on channel type.
+    
+    Args:
+        value: Raw status value (can be int or float 0.0-1.0)
+        ch_num: Channel number (1-based)
+        channel_types: String of channel types
+    
+    Returns:
+        float: Normalized value 0.0-1.0
+    """
+    max_val = get_channel_max_value(ch_num, channel_types)
+    
+    # Already normalized (0.0-1.0 float)
+    if isinstance(value, float) and 0.0 <= value <= 1.0:
+        return value
+    
+    # Convert to normalized
+    return min(1.0, value / max_val)
+
+
+def denormalize_status_value(normalized_value, ch_num, channel_types):
+    """
+    Convert a normalized value (0.0-1.0) to the channel's actual range.
+    
+    Args:
+        normalized_value: Value in 0.0-1.0 range
+        ch_num: Channel number (1-based)
+        channel_types: String of channel types
+    
+    Returns:
+        int: Actual value in channel's range
+    """
+    max_val = get_channel_max_value(ch_num, channel_types)
+    return int(round(normalized_value * max_val))
 
 
 def parse_ramp_for_visualization(ramp_str):
@@ -366,7 +457,7 @@ def calculate_current_position(channels, start_time):
     return positions
 
 
-def generate_html(channels, positions, output_file, upload_time=None, channel_start_times=None):
+def generate_html(channels, positions, output_file, upload_time=None, channel_start_times=None, loop_info=None, channel_types='', calib_factor=1.0):
     """Generate interactive HTML visualization with real-time status.
     
     All time calculations and position updates are done in JavaScript for independence.
@@ -378,16 +469,25 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         output_file: Path to output HTML file
         upload_time: When commands were uploaded to Arduino
         channel_start_times: Dict of per-channel start times (for display only)
+        loop_info: Dict of per-channel loop settings (0=no loop, 1=loop forever)
+        channel_types: String of channel types (e.g., 'MMMM', 'PPPP')
+        calib_factor: Calibration factor to convert real time to calibrated time
     """
     
     import json
     from datetime import datetime
+    
+    # Default loop_info to empty dict
+    if loop_info is None:
+        loop_info = {}
     
     # Get current time for initial display only
     now = datetime.now()
     
     # Prepare data for JavaScript - only static data
     channels_json = json.dumps(channels)
+    loop_info_json = json.dumps(loop_info)
+    channel_types_json = json.dumps(channel_types)
     
     # Prepare upload time for JavaScript
     if upload_time:
@@ -404,13 +504,24 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
     channel_start_times_json = json.dumps(channel_start_times_display)
     
     # Build intensity data for plotting
+    # Supports multiple value ranges: binary (0-1), PWM (0-255), DAC (0-4095)
+    # For LOOP channels, skip pattern 0 (wait pattern) since Arduino skips it after first cycle
     channel_intensity_data = {}
     for ch_num, patterns in channels.items():
         segments = []
+        # Check if this channel has LOOP enabled
+        channel_has_loop = loop_info.get(ch_num, 0) == 1
+        # Get channel max value for normalization
+        ch_max = get_channel_max_value(ch_num, channel_types)
         for pattern in patterns:
+            # Skip wait pattern (pattern 0) for LOOP channels in intensity timeline
+            if channel_has_loop and pattern.get('pattern', -1) == 0:
+                continue
             repeats = pattern.get('repeats', 1)
+            pulse_str = pattern.get('pulse', None)
+            
             if pattern.get('is_ramp') and pattern.get('ramp_segments'):
-                # Use RAMP segment data directly
+                # RAMP patterns: Use actual values (0-255 for PWM, 0-4095 for DAC)
                 for _ in range(repeats):
                     for seg in pattern['ramp_segments']:
                         segments.append({
@@ -419,59 +530,79 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                             'duration': seg.get('duration_ms', seg.get('duration', 1000)),
                             'mode': seg.get('mode', 'L'),
                             't_start': seg.get('t_start', 0),
-                            't_end': seg.get('t_end', 1)
+                            't_end': seg.get('t_end', 1),
+                            'max_value': ch_max
                         })
-            elif any(0 < s < 255 for s in pattern.get('status', [])):
-                # Regular pattern with PWM values - create constant segments
-                for _ in range(repeats):
-                    for i, (status, time_ms) in enumerate(zip(pattern['status'], pattern['time_ms_original'])):
-                        if isinstance(status, int) and 0 < status < 255:
-                            # This is a PWM value
-                            segments.append({
-                                'start': status,
-                                'end': status,
-                                'duration': time_ms,
-                                'mode': 'L',
-                                't_start': 0,
-                                't_end': 1
-                            })
-                        elif status == 1 or status == 255:
-                            # ON state
-                            segments.append({
-                                'start': 255,
-                                'end': 255,
-                                'duration': time_ms,
-                                'mode': 'L',
-                                't_start': 0,
-                                't_end': 1
-                            })
-                        else:
-                            # OFF state
-                            segments.append({
-                                'start': 0,
-                                'end': 0,
-                                'duration': time_ms,
-                                'mode': 'L',
-                                't_start': 0,
-                                't_end': 1
-                            })
             else:
-                # Regular ON/OFF patterns - include for complete timeline
-                for _ in range(repeats):
-                    for status, time_ms in zip(pattern.get('status', [0]), pattern.get('time_ms_original', [1000])):
-                        # Handle status value: 255 or 1 = ON (full brightness), 0 = OFF
-                        if status >= 1:
-                            pwm = 255 if status == 1 else status  # status could be a PWM value
+                # STATUS patterns: Pass through actual values
+                # Supports binary (0/1), PWM (0-255), or DAC (0-4095)
+                # Normalized values (0.0-1.0) are converted to channel range
+                # Parse pulse parameters if present: T{period}pw{width}
+                pulse_params = []
+                if pulse_str:
+                    import re
+                    pulse_parts = pulse_str.split(',')
+                    for p in pulse_parts:
+                        match = re.match(r'T(\d+)pw(\d+)', p.strip())
+                        if match:
+                            pulse_params.append({
+                                'period': int(match.group(1)),
+                                'width': int(match.group(2))
+                            })
                         else:
-                            pwm = 0
-                        segments.append({
-                            'start': pwm,
-                            'end': pwm,
-                            'duration': time_ms,
-                            'mode': 'L',
-                            't_start': 0,
-                            't_end': 1
-                        })
+                            pulse_params.append(None)  # No pulse for this status
+                
+                for _ in range(repeats):
+                    for i, (status, time_ms) in enumerate(zip(pattern.get('status', [0]), pattern.get('time_ms_original', [1000]))):
+                        # Convert normalized values (0.0-1.0) to channel's actual range
+                        # e.g., 0.2 on MCP4728 channel -> 819 (0.2 * 4095)
+                        if isinstance(status, float) and 0.0 <= status <= 1.0 and status not in (0, 1):
+                            value = int(round(status * ch_max))
+                        else:
+                            value = status
+                        
+                        # Check if this status has pulse
+                        pulse_param = pulse_params[i] if i < len(pulse_params) else None
+                        
+                        if value > 0 and pulse_param and pulse_param.get('period', 0) > 0:
+                            # Generate pulse waveform segments
+                            period_ms = pulse_param['period']
+                            width_ms = pulse_param['width']
+                            remaining_ms = time_ms
+                            
+                            while remaining_ms > 0:
+                                # ON phase
+                                on_duration = min(width_ms, remaining_ms)
+                                if on_duration > 0:
+                                    segments.append({
+                                        'start': value, 'end': value,
+                                        'duration': on_duration,
+                                        'mode': 'L', 't_start': 0, 't_end': 1,
+                                        'max_value': ch_max
+                                    })
+                                    remaining_ms -= on_duration
+                                
+                                # OFF phase
+                                off_duration = min(period_ms - width_ms, remaining_ms)
+                                if off_duration > 0:
+                                    segments.append({
+                                        'start': 0, 'end': 0,
+                                        'duration': off_duration,
+                                        'mode': 'L', 't_start': 0, 't_end': 1,
+                                        'max_value': ch_max
+                                    })
+                                    remaining_ms -= off_duration
+                        else:
+                            # No pulse - constant level
+                            segments.append({
+                                'start': value,
+                                'end': value,
+                                'duration': time_ms,
+                                'mode': 'L',
+                                't_start': 0,
+                                't_end': 1,
+                                'max_value': ch_max
+                            })
         
         if segments:
             channel_intensity_data[ch_num] = segments
@@ -483,7 +614,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Protocol Visualization - Light Controller v2.2</title>
+    <title>Protocol Visualization - Light Controller v2.3</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
         * {{
@@ -598,6 +729,12 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             color: #00ff00;
         }}
         
+        .status-led.ramping {{
+            background: linear-gradient(135deg, #00ff00, #00bcd4);
+            color: #00ff00;
+            animation: ramp-pulse 2s ease-in-out infinite;
+        }}
+        
         .status-led.off {{
             background: #555;
             color: #555;
@@ -621,11 +758,28 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             50% {{ opacity: 0.5; }}
         }}
         
+        @keyframes ramp-pulse {{
+            0%, 100% {{ opacity: 1; box-shadow: 0 0 10px #00ff00; }}
+            50% {{ opacity: 0.8; box-shadow: 0 0 20px #00bcd4; }}
+        }}
+        
         .channels-container {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            /* Default: 2 columns for better readability */
+            grid-template-columns: repeat(2, 1fr);
             gap: 20px;
             margin-bottom: 40px;
+        }}
+        
+        /* Wider columns for single channel */
+        .channels-container.cols-1 {{
+            grid-template-columns: 1fr;
+        }}
+        
+        @media (max-width: 900px) {{
+            .channels-container {{
+                grid-template-columns: 1fr;
+            }}
         }}
         
         .channel-section {{
@@ -858,7 +1012,7 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
     <div class="container">
         <div class="header">
             <h1>🔦 Protocol Timeline Visualization</h1>
-            <div class="subtitle">Light Controller v2.2</div>
+            <div class="subtitle">Light Controller v2.3</div>
         </div>
         
         <div class="status-panel">
@@ -934,8 +1088,17 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
     html += """
             </div>
         </div>
+"""
     
-    <div class="channels-container">
+    # Determine column class based on channel count
+    num_channels = len(channels)
+    if num_channels == 1:
+        cols_class = "cols-1"
+    else:
+        cols_class = ""  # Default 2 columns for 2+ channels
+    
+    html += f"""
+    <div class="channels-container {cols_class}">
 """
     
     # Generate channel timelines
@@ -1066,33 +1229,54 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                     else:
                         width_percent = 100  # Single segment takes full width
                     
-                    if pattern['pulse'] and state == 1:
+                    # Determine max value based on likely channel type (4095 for DAC, 255 for PWM)
+                    # Check if any value > 255 to detect DAC mode
+                    max_val = 255
+                    for s in pattern['status']:
+                        if isinstance(s, (int, float)) and s > 255:
+                            max_val = 4095
+                            break
+                    
+                    # Handle different value types: binary (0/1), normalized (0.0-1.0), direct PWM/DAC
+                    if pattern['pulse'] and (state == 1 or state == 1.0):
                         state_class = 'pulsing'
                         state_text = '≈'
-                    elif state == 1 or state == 255:
+                    elif state == 1 or state == 1.0:
                         state_class = 'on'
-                        state_text = '█'
+                        state_text = f'MAX'
                     elif state == 0:
                         state_class = 'off'
                         state_text = '░'
-                    else:
-                        # PWM value between 0-255
-                        brightness = int(50 + (state / 255) * 150)
+                    elif isinstance(state, float) and 0 < state < 1:
+                        # Normalized float value (0.0-1.0)
+                        brightness = int(50 + state * 150)
+                        pct = int(state * 100)
                         state_class = 'pwm'
-                        state_text = str(state)
-                    
-                    # Handle PWM states with inline style
-                    if state not in [0, 1, 255]:
-                        brightness = int(50 + (state / 255) * 150)
+                        state_text = f'{pct}%'
                         html += f'''
                             <div class="timeline-segment" style="width: {width_percent}%; 
                                 background: rgb({brightness}, {brightness + 50}, {brightness//2});
-                                border: 1px solid #4CAF50; color: #fff; font-size: 10px; text-shadow: 1px 1px 1px #000;" title="PWM: {state}">
+                                border: 1px solid #4CAF50; color: #fff; font-size: 10px; text-shadow: 1px 1px 1px #000;" title="Normalized: {state:.2f} ({pct}%)">
                                 {state_text}
                             </div>
 '''
+                        continue
                     else:
-                        html += f"""
+                        # Direct PWM (0-255) or DAC (0-4095) value
+                        norm_val = state / max_val if max_val > 0 else 0
+                        brightness = int(50 + norm_val * 150)
+                        state_class = 'pwm'
+                        state_text = str(int(state))
+                        html += f'''
+                            <div class="timeline-segment" style="width: {width_percent}%; 
+                                background: rgb({brightness}, {brightness + 50}, {brightness//2});
+                                border: 1px solid #4CAF50; color: #fff; font-size: 10px; text-shadow: 1px 1px 1px #000;" title="Value: {state}">
+                                {state_text}
+                            </div>
+'''
+                        continue
+                    
+                    html += f"""
                             <div class="timeline-segment {state_class}" style="width: {width_percent}%">
                                 {state_text}
                             </div>
@@ -1202,6 +1386,33 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         const uploadTimeStr = {json.dumps(upload_time_str)};
         const uploadTime = uploadTimeStr ? new Date(uploadTimeStr) : null;
         
+        // LOOP configuration per channel (0=no loop, 1=loop forever)
+        const loopInfo = {loop_info_json};
+        
+        // Channel types from Arduino config (e.g., 'MMMM' for 4 MCP4728 channels)
+        // P=PWM (0-255), D=DAC (0-4095), M=MCP4728 (0-4095), B=Binary (0-1)
+        const channelTypes = {channel_types_json};
+        
+        // Helper function to get max value for a channel
+        function getChannelMaxValue(chNum) {{
+            if (!channelTypes || chNum > channelTypes.length) return 255;
+            const chType = channelTypes[chNum - 1];
+            if (chType === 'B') return 1;
+            if (chType === 'D' || chType === 'M') return 4095;
+            return 255;  // PWM or unknown
+        }}
+        
+        // Helper function to get channel type name
+        function getChannelTypeName(chNum) {{
+            if (!channelTypes || chNum > channelTypes.length) return 'PWM';
+            const chType = channelTypes[chNum - 1];
+            const typeNames = {{ 'P': 'PWM', 'D': 'DAC', 'M': 'MCP4728', 'B': 'Binary' }};
+            return typeNames[chType] || 'PWM';
+        }}
+        
+        // Calibration factor: real_time * calib_factor = calibrated_time (timeline time)
+        const calibFactor = {calib_factor};
+        
         // Channel start times (upload_time + wait_time per channel) - for display only
         const channelStartTimesRaw = {channel_start_times_json};
         const channelStartTimes = {{}};
@@ -1303,8 +1514,11 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             return result;
         }}
         
-        // Calculate current position for a channel
-        function calculatePosition(channel, elapsedMs) {{
+        // Calculate current position for a channel (with LOOP support)
+        function calculatePosition(channel, elapsedMs, chNum) {{
+            // Check if this channel has LOOP enabled
+            const hasLoop = loopInfo[chNum] === 1;
+            
             // Handle negative elapsed (protocol hasn't started yet)
             if (elapsedMs < 0) {{
                 return {{
@@ -1318,8 +1532,34 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                     completed: false,
                     waiting: true,
                     position_percent: 0,
-                    pattern_start_ms: 0
+                    pattern_start_ms: 0,
+                    looping: hasLoop,
+                    loop_iteration: 0
                 }};
+            }}
+            
+            // Calculate total channel duration (excluding wait pattern for loop calculation)
+            let channelTotalDuration = 0;
+            let nonWaitDuration = 0;
+            let waitDuration = 0;
+            for (let p = 0; p < channel.length; p++) {{
+                const pd = channel[p].time_ms_original.reduce((a, b) => a + b, 0) * channel[p].repeats;
+                channelTotalDuration += pd;
+                if (channel[p].pattern === 0) {{
+                    waitDuration += pd;
+                }} else {{
+                    nonWaitDuration += pd;
+                }}
+            }}
+            
+            // For LOOP: wrap elapsed time to loop the non-wait portion
+            let effectiveElapsed = elapsedMs;
+            let loopIteration = 0;
+            if (hasLoop && elapsedMs > waitDuration && nonWaitDuration > 0) {{
+                const timeAfterWait = elapsedMs - waitDuration;
+                loopIteration = Math.floor(timeAfterWait / nonWaitDuration);
+                const timeInCurrentLoop = timeAfterWait % nonWaitDuration;
+                effectiveElapsed = waitDuration + timeInCurrentLoop;
             }}
             
             let totalElapsed = 0;
@@ -1329,9 +1569,9 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                 const cycleDuration = pattern.time_ms_original.reduce((a, b) => a + b, 0);
                 const patternDuration = cycleDuration * pattern.repeats;
                 
-                if (totalElapsed + patternDuration > elapsedMs) {{
+                if (totalElapsed + patternDuration > effectiveElapsed) {{
                     // Current pattern
-                    const patternElapsed = elapsedMs - totalElapsed;
+                    const patternElapsed = effectiveElapsed - totalElapsed;
                     const currentCycle = Math.floor(patternElapsed / cycleDuration);
                     const cycleElapsed = patternElapsed % cycleDuration;
                     
@@ -1346,38 +1586,54 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                         stateElapsed += pattern.time_ms_original[s];
                     }}
                     
-                    // Calculate position percentage within the entire channel timeline
-                    let channelTotalDuration = 0;
-                    for (let p = 0; p < channel.length; p++) {{
-                        const pd = channel[p].time_ms_original.reduce((a, b) => a + b, 0) * channel[p].repeats;
-                        channelTotalDuration += pd;
-                    }}
-                    const positionPercent = (elapsedMs / channelTotalDuration) * 100;
+                    const positionPercent = (effectiveElapsed / channelTotalDuration) * 100;
                     
                     // Check if this is pattern 0 (wait pattern) - treat as "waiting"
                     const isWaitingPattern = (pattern.pattern === 0);
                     
+                    // Calculate ramp value if this is a RAMP pattern
+                    let rampValue = null;
+                    let actualStatus = pattern.status[currentState];
+                    if (pattern.is_ramp && pattern.ramp_segments) {{
+                        rampValue = getCurrentRampValue(pattern, cycleElapsed);
+                        if (rampValue) {{
+                            actualStatus = rampValue.value;
+                        }}
+                    }}
+                    
                     return {{
-                        elapsed_ms: elapsedMs,
+                        elapsed_ms: elapsedMs,  // Actual elapsed (not wrapped)
+                        effective_elapsed_ms: effectiveElapsed,  // Wrapped for loop
                         current_pattern: pIdx,
                         current_cycle: currentCycle,
                         current_state: currentState,
-                        status: pattern.status[currentState],
-                        is_pulsing: pattern.pulse ? true : false,  // Show pulse even during waiting
-                        pulse_info: pattern.pulse ? pattern : null,  // Include pulse info even during waiting
+                        status: actualStatus,
+                        is_ramp: pattern.is_ramp || false,
+                        ramp_info: rampValue,
+                        is_pulsing: pattern.pulse ? true : false,
+                        pulse_info: pattern.pulse ? pattern : null,
                         completed: false,
                         waiting: isWaitingPattern,
                         position_percent: positionPercent,
-                        pattern_start_ms: totalElapsed
+                        pattern_start_ms: totalElapsed,
+                        cycle_elapsed_ms: cycleElapsed,
+                        looping: hasLoop,
+                        loop_iteration: loopIteration
                     }};
                 }}
                 
                 totalElapsed += patternDuration;
             }}
             
-            // Completed
+            // Completed (only if not looping)
+            if (hasLoop) {{
+                // Should not reach here if loop logic is correct, but handle gracefully
+                return calculatePosition(channel, waitDuration + 1, chNum);
+            }}
+            
             return {{
                 elapsed_ms: elapsedMs,
+                effective_elapsed_ms: elapsedMs,
                 current_pattern: channel.length - 1,
                 current_cycle: channel[channel.length - 1].repeats - 1,
                 current_state: channel[channel.length - 1].status.length - 1,
@@ -1387,7 +1643,97 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                 completed: true,
                 waiting: false,
                 position_percent: 100,
-                pattern_start_ms: totalElapsed
+                pattern_start_ms: totalElapsed,
+                looping: false,
+                loop_iteration: 0
+            }};
+        }}
+        
+        // Format status value for display (handles binary, PWM, DAC values)
+        function formatStatusValue(status, isRamp = false, rampInfo = null) {{
+            if (isRamp && rampInfo) {{
+                // Show ramp value with direction indicator
+                const direction = rampInfo.start < rampInfo.end ? '↑' : (rampInfo.start > rampInfo.end ? '↓' : '→');
+                return `${{Math.round(status)}} ${{direction}} (${{rampInfo.mode}}: ${{rampInfo.start}}→${{rampInfo.end}})`;
+            }}
+            if (status === 0) return 'OFF (0)';
+            if (status === 1) return 'ON (1→MAX)';
+            if (status === 1.0) return 'ON (1.0→MAX)';
+            if (typeof status === 'number' && status > 0 && status < 1) {{
+                const pct = (status * 100).toFixed(1);
+                return `${{pct}}% (${{status}})`;
+            }}
+            // Direct PWM/DAC value
+            return `${{status}}`;
+        }}
+        
+        // Calculate eased value for RAMP patterns
+        function calculateRampValue(progress, startVal, endVal, mode, tStart, tEnd) {{
+            // Map progress [0, 1] to t [tStart, tEnd]
+            const t = tStart + progress * (tEnd - tStart);
+            
+            // f(t) = (1 - cos(π * t)) / 2
+            const cosValue = (1 - Math.cos(Math.PI * t)) / 2;
+            
+            // Apply easing based on mode
+            let easedProgress;
+            if (mode === 'L') {{
+                easedProgress = progress;  // Linear
+            }} else {{
+                easedProgress = cosValue;  // Eased (I, O, C, X modes)
+            }}
+            
+            return startVal + easedProgress * (endVal - startVal);
+        }}
+        
+        // Get current ramp value for a pattern at given cycle elapsed time
+        function getCurrentRampValue(pattern, cycleElapsed) {{
+            if (!pattern.is_ramp || !pattern.ramp_segments) {{
+                return null;
+            }}
+            
+            const segments = pattern.ramp_segments;
+            let segmentStart = 0;
+            
+            for (let i = 0; i < segments.length; i++) {{
+                const seg = segments[i];
+                const segDuration = seg.duration_ms || seg.duration || 1000;
+                
+                if (segmentStart + segDuration > cycleElapsed) {{
+                    // We're in this segment
+                    const timeInSegment = cycleElapsed - segmentStart;
+                    const progress = timeInSegment / segDuration;
+                    
+                    const startVal = seg.start_pwm !== undefined ? seg.start_pwm : seg.start;
+                    const endVal = seg.end_pwm !== undefined ? seg.end_pwm : seg.end;
+                    const mode = seg.mode || 'L';
+                    const tStart = seg.t_start !== undefined ? seg.t_start : 0;
+                    const tEnd = seg.t_end !== undefined ? seg.t_end : 1;
+                    
+                    const currentValue = calculateRampValue(progress, startVal, endVal, mode, tStart, tEnd);
+                    
+                    return {{
+                        value: currentValue,
+                        start: startVal,
+                        end: endVal,
+                        mode: mode,
+                        progress: progress,
+                        segmentIndex: i
+                    }};
+                }}
+                
+                segmentStart += segDuration;
+            }}
+            
+            // Past all segments - return last segment's end value
+            const lastSeg = segments[segments.length - 1];
+            return {{
+                value: lastSeg.end_pwm !== undefined ? lastSeg.end_pwm : lastSeg.end,
+                start: lastSeg.start_pwm !== undefined ? lastSeg.start_pwm : lastSeg.start,
+                end: lastSeg.end_pwm !== undefined ? lastSeg.end_pwm : lastSeg.end,
+                mode: lastSeg.mode || 'L',
+                progress: 1,
+                segmentIndex: segments.length - 1
             }};
         }}
         
@@ -1486,66 +1832,120 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                         // Calculate elapsed time from UPLOAD TIME
                         // Pattern 0 (wait pattern) handles the waiting period
                         const channelElapsed = now - uploadTime;
-                        const pos = calculatePosition(channel, channelElapsed);
+                        const pos = calculatePosition(channel, channelElapsed, chNum);
+                        
+                        // Check if this channel has LOOP enabled
+                        const hasLoop = loopInfo[chNum] === 1;
 
                         // Compute total channel duration and remaining time
                         const channelTotalDuration = channel.reduce((acc, p) => {{
                             const cycle = p.time_ms_original.reduce((a, b) => a + b, 0);
                             return acc + cycle * p.repeats;
                         }}, 0);
-                        const remainingMs = Math.max(0, channelTotalDuration - pos.elapsed_ms);
+                        
+                        // For looping channels, show "∞ LOOPING" instead of countdown
+                        let remainingDisplay;
+                        if (hasLoop && !pos.waiting) {{
+                            remainingDisplay = '∞ LOOP #' + (pos.loop_iteration + 1);
+                        }} else {{
+                            const remainingMs = Math.max(0, channelTotalDuration - pos.elapsed_ms);
+                            remainingDisplay = formatTime(remainingMs);
+                        }}
                         if (cached.leftTime) {{
-                            cached.leftTime.textContent = formatTime(remainingMs);
+                            cached.leftTime.textContent = remainingDisplay;
                         }}
 
                         // Update per-pattern remaining times for this channel
+                        // For LOOP channels, use effective_elapsed_ms (wrapped) instead of elapsed_ms
                         const meta = channelsMeta[chNum];
                         if (meta) {{
+                            const elapsedForCalc = hasLoop ? pos.effective_elapsed_ms : pos.elapsed_ms;
+                            
                             for (let pi = 0; pi < meta.starts.length; pi++) {{
                                 const startMs = meta.starts[pi];
                                 const dur = meta.durations[pi];
                                 let leftForPattern = 0;
 
-                                if (pos.elapsed_ms < startMs) {{
+                                if (elapsedForCalc < startMs) {{
                                     leftForPattern = dur;
-                                }} else if (pos.elapsed_ms >= startMs + dur) {{
+                                }} else if (elapsedForCalc >= startMs + dur) {{
                                     leftForPattern = 0;
                                 }} else {{
-                                    leftForPattern = (startMs + dur) - pos.elapsed_ms;
+                                    leftForPattern = (startMs + dur) - elapsedForCalc;
                                 }}
 
                                 const el = document.getElementById('ch' + chNum + '_pat' + pi + '_left');
                                 if (el) {{
-                                    el.textContent = formatTime(leftForPattern);
+                                    // For looping channels, show loop info with remaining time in current cycle
+                                    if (hasLoop && elapsedForCalc >= startMs && elapsedForCalc < startMs + dur) {{
+                                        el.textContent = formatTime(leftForPattern) + ' 🔄#' + (pos.loop_iteration + 1);
+                                    }} else if (hasLoop && !pos.waiting) {{
+                                        // LOOP channel but not in this pattern - show appropriate status
+                                        if (elapsedForCalc < startMs) {{
+                                            el.textContent = formatTime(leftForPattern) + ' 🔄#' + (pos.loop_iteration + 1);
+                                        }} else {{
+                                            el.textContent = '✓ 🔄#' + (pos.loop_iteration + 1);
+                                        }}
+                                    }} else {{
+                                        el.textContent = formatTime(leftForPattern);
+                                    }}
                                 }}
                             }}
                         }}
                         
-                        // Update LED and status text
+                        // Update LED and status text - show exact values for non-binary states
+                        const statusVal = pos.status;
+                        const isRamp = pos.is_ramp || false;
+                        const rampInfo = pos.ramp_info || null;
+                        const statusDisplay = formatStatusValue(statusVal, isRamp, rampInfo);
+                        
+                        // Determine LED class based on value
+                        let ledClass = 'off';
+                        if (statusVal === 0) {{
+                            ledClass = 'off';
+                        }} else if (statusVal === 1 || statusVal === 1.0) {{
+                            ledClass = 'on';
+                        }} else if (typeof statusVal === 'number' && statusVal > 0) {{
+                            // Intermediate value - use "on" class with partial brightness indication
+                            ledClass = 'on';
+                        }}
+                        
+                        // For RAMP patterns, add special styling
+                        if (isRamp && rampInfo) {{
+                            ledClass = 'on';  // RAMP is always "active"
+                        }}
+                        
                         if (pos.waiting) {{
-                            // Show actual ON/OFF status even during waiting
+                            // Show actual status value even during waiting
                             if (pos.is_pulsing) {{
                                 cached.led.className = 'status-led pulsing';
-                                cached.statusText.textContent = '⏰ WAITING - PULSING ≈';
-                            }} else if (pos.status === 1) {{
-                                cached.led.className = 'status-led on';
-                                cached.statusText.textContent = '⏰ WAITING - ON █';
-                            }} else {{
+                                cached.statusText.textContent = '⏰ WAITING - PULSING ≈ ' + statusDisplay;
+                            }} else if (statusVal === 0) {{
                                 cached.led.className = 'status-led off';
                                 cached.statusText.textContent = '⏰ WAITING - OFF ░';
+                            }} else {{
+                                cached.led.className = 'status-led ' + ledClass;
+                                cached.statusText.textContent = '⏰ WAITING - ' + statusDisplay;
                             }}
                         }} else if (pos.completed) {{
                             cached.led.className = 'status-led completed';
                             cached.statusText.textContent = 'COMPLETED ✓';
+                        }} else if (isRamp && rampInfo) {{
+                            // RAMP pattern - show dynamic value with ramp indicator
+                            cached.led.className = 'status-led ramping';
+                            let loopIndicator = hasLoop ? ' 🔄' : '';
+                            cached.statusText.textContent = '📈 RAMP: ' + statusDisplay + loopIndicator;
                         }} else if (pos.is_pulsing) {{
                             cached.led.className = 'status-led pulsing';
-                            cached.statusText.textContent = 'PULSING ≈';
-                        }} else if (pos.status === 1) {{
-                            cached.led.className = 'status-led on';
-                            cached.statusText.textContent = 'ON █';
-                        }} else {{
+                            cached.statusText.textContent = 'PULSING ≈ ' + statusDisplay;
+                        }} else if (statusVal === 0) {{
                             cached.led.className = 'status-led off';
                             cached.statusText.textContent = 'OFF ░';
+                        }} else {{
+                            cached.led.className = 'status-led ' + ledClass;
+                            // Show exact value with loop indicator if looping
+                            let loopIndicator = hasLoop ? ' 🔄' : '';
+                            cached.statusText.textContent = statusDisplay + loopIndicator;
                         }}
                         
                         // Update pattern/cycle info
@@ -1642,23 +2042,56 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                 }}
                                 
                                 // Calculate protocol elapsed (time since pattern 0 ended for this channel)
+                                // For LOOP channels, show both total elapsed and elapsed in current loop cycle
                                 let protocolElapsedDisplay = '--:--:--:--';
+                                let loopCycleElapsed = '--:--:--:--';
+                                const elapsedToUse = hasLoop ? pos.effective_elapsed_ms : pos.elapsed_ms;
                                 if (channel[0] && channel[0].pattern === 0) {{
                                     const pattern0Duration = channel[0].time_ms_original.reduce((a, b) => a + b, 0) * channel[0].repeats;
                                     if (pos.elapsed_ms >= pattern0Duration) {{
+                                        // Total elapsed since protocol started (actual time)
                                         const protocolElapsed = pos.elapsed_ms - pattern0Duration;
                                         protocolElapsedDisplay = formatTime(protocolElapsed);
+                                        // For LOOP: also show elapsed in current loop cycle
+                                        if (hasLoop && pos.effective_elapsed_ms >= pattern0Duration) {{
+                                            const cycleElapsed = pos.effective_elapsed_ms - pattern0Duration;
+                                            loopCycleElapsed = formatTime(cycleElapsed);
+                                        }}
                                     }}
                                 }} else {{
                                     // No pattern 0, protocol elapsed = total elapsed
                                     protocolElapsedDisplay = formatTime(pos.elapsed_ms);
+                                    if (hasLoop) {{
+                                        loopCycleElapsed = formatTime(pos.effective_elapsed_ms);
+                                    }}
+                                }}
+                                
+                                // Show loop info if enabled
+                                let loopDisplay = '';
+                                // For LOOP: calculate remaining time in current loop cycle
+                                const nonWaitDuration = channel.slice(1).reduce((acc, p) => {{
+                                    const cycle = p.time_ms_original.reduce((a, b) => a + b, 0);
+                                    return acc + cycle * p.repeats;
+                                }}, 0);
+                                let remainingDisplay = formatTime(Math.max(0, channelTotalDuration - pos.elapsed_ms));
+                                if (hasLoop) {{
+                                    // Calculate remaining time in current loop iteration
+                                    const pattern0Duration = channel[0] && channel[0].pattern === 0 
+                                        ? channel[0].time_ms_original.reduce((a, b) => a + b, 0) * channel[0].repeats 
+                                        : 0;
+                                    const timeInLoop = pos.effective_elapsed_ms - pattern0Duration;
+                                    const remainingInLoop = Math.max(0, nonWaitDuration - timeInLoop);
+                                    loopDisplay = '<div style="color: #00bcd4; font-weight: bold; margin-top: 4px;">🔄 LOOP #' + (pos.loop_iteration + 1) + ' (∞)</div>';
+                                    loopDisplay += '<div style="color: #00bcd4; font-size: 0.9em;">Cycle Elapsed: ' + loopCycleElapsed + '</div>';
+                                    remainingDisplay = formatTime(remainingInLoop) + ' (this cycle)';
                                 }}
                                 
                                 cached.infoDiv.innerHTML = `
                                     <div>Pattern: ${{pos.current_pattern + 1}}/${{channel.length}}</div>
                                     <div>Cycle: ${{pos.current_cycle + 1}}/${{currentPattern.repeats}}</div>
-                                    <div style="color: #fff;">Protocol Elapsed: ${{protocolElapsedDisplay}}</div>
-                                    <div style="font-size: 1.15em; color: #fff; font-weight: bold; margin-top: 6px;">Total Left: ${{formatTime(remainingMs)}}</div>
+                                    <div style="color: #fff;">Total Elapsed: ${{protocolElapsedDisplay}}</div>
+                                    <div style="font-size: 1.15em; color: #fff; font-weight: bold; margin-top: 6px;">Time Left: ${{remainingDisplay}}</div>
+                                    ${{loopDisplay}}
                                     ${{pulseInfo}}
                                 `;
                             }}
@@ -1693,7 +2126,9 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                     const timeline = document.getElementById('ch' + chNum + '_pat' + pos.current_pattern + '_timeline');
                                     if (timeline && currentPattern) {{
                                         const cycleDuration = currentPattern.time_ms_original.reduce((a, b) => a + b, 0);
-                                        const patternElapsed = pos.elapsed_ms - pos.pattern_start_ms;
+                                        // For LOOP channels, use effective_elapsed_ms which is wrapped to current loop cycle
+                                        const elapsedToUse = hasLoop ? pos.effective_elapsed_ms : pos.elapsed_ms;
+                                        const patternElapsed = elapsedToUse - pos.pattern_start_ms;
                                         const cycleElapsed = patternElapsed % cycleDuration;
                                         const percentInCycle = (cycleElapsed / cycleDuration) * 100;
                                         
@@ -1713,7 +2148,8 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                     cachedElements.channelKeys.forEach(chNum => {{
                         const channel = channelsData[chNum];
                         const cached = cachedElements.channels[chNum];
-                        const pos = calculatePosition(channel, 0);
+                        const pos = calculatePosition(channel, 0, chNum);
+                        const hasLoop = loopInfo[chNum] === 1;
                         
                         if (cached && cached.led && cached.statusText) {{
                             if (pos.completed) {{
@@ -1721,7 +2157,8 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                 cached.statusText.textContent = 'COMPLETED ✓';
                             }} else {{
                                 cached.led.className = 'status-led off';
-                                cached.statusText.textContent = 'Ready';
+                                const loopIndicator = hasLoop ? ' 🔄' : '';
+                                cached.statusText.textContent = 'Ready' + loopIndicator;
                             }}
                             
                             if (cached.infoDiv) {{
@@ -1732,12 +2169,15 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                                     const cycle = p.time_ms_original.reduce((a, b) => a + b, 0);
                                     channelTotalDuration += cycle * p.repeats;
                                 }}
+                                
+                                const remainingDisplay = hasLoop ? '∞ LOOP mode' : formatTime(channelTotalDuration - pos.elapsed_ms);
 
                                 cached.infoDiv.innerHTML = `
                                     <div>Pattern: ${{pos.current_pattern + 1}}/${{channel.length}}</div>
                                     <div>Cycle: ${{pos.current_cycle + 1}}/${{channel[pos.current_pattern].repeats}}</div>
                                     <div>Elapsed: ${{formatTime(0)}}</div>
-                                    <div style="font-size: 1.15em; color: #333; font-weight: bold; margin-top: 6px;">Total Left: ${{formatTime(channelTotalDuration - pos.elapsed_ms)}}</div>
+                                    <div style="font-size: 1.15em; color: #333; font-weight: bold; margin-top: 6px;">Total Left: ${{remainingDisplay}}</div>
+                                    ${{hasLoop ? '<div style="color: #00bcd4; font-weight: bold; margin-top: 4px;">🔄 LOOP enabled</div>' : ''}}
                                 `;
                             }}
                         }}
@@ -1831,6 +2271,40 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
         // Channel intensity data from Python
         const channelIntensityData = {channel_intensity_json};
         
+        // Detect value range from data
+        function detectValueRange(values) {{
+            if (!values || values.length === 0) return {{ min: 0, max: 255, type: 'pwm' }};
+            const maxVal = Math.max(...values);
+            const minVal = Math.min(...values);
+            
+            if (maxVal <= 1) return {{ min: 0, max: 1, type: 'binary' }};
+            if (maxVal <= 255) return {{ min: 0, max: 255, type: 'pwm' }};
+            return {{ min: 0, max: 4095, type: 'dac' }};
+        }}
+        
+        // Calculate dynamic Y-axis limits with padding
+        function calculateDynamicYlim(values, paddingPct = 0.1) {{
+            if (!values || values.length === 0) return {{ min: -5, max: 260 }};
+            
+            const dataMin = Math.min(...values);
+            const dataMax = Math.max(...values);
+            const range = detectValueRange(values);
+            
+            // Calculate padding
+            const dataRange = dataMax - dataMin;
+            const padding = Math.max(dataRange * paddingPct, range.max * 0.02);
+            
+            let yMin = Math.max(-range.max * 0.02, dataMin - padding);
+            let yMax = Math.min(range.max * 1.05, dataMax + padding);
+            
+            // Ensure minimum visible range (at least 5% of full range)
+            if (yMax - yMin < range.max * 0.05) {{
+                yMax = yMin + range.max * 0.1;
+            }}
+            
+            return {{ min: yMin, max: yMax, type: range.type }};
+        }}
+        
         // Render intensity plots for all channels
         Object.keys(channelIntensityData).forEach(chNum => {{
             const plotDiv = document.getElementById(`intensity-plot-ch${{chNum}}`);
@@ -1840,6 +2314,21 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             if (!segments || segments.length === 0) return;
             
             const curve = generateIntensityCurve(segments);
+            const hasLoop = loopInfo[chNum] === 1;
+            
+            // Get channel type info (use known channel type instead of auto-detecting)
+            const chMax = getChannelMaxValue(parseInt(chNum));
+            const chTypeName = getChannelTypeName(parseInt(chNum));
+            
+            // Calculate dynamic Y-axis limits using known channel max
+            const ylim = calculateDynamicYlim(curve.intensities);
+            ylim.max = chMax;  // Override with known channel max
+            
+            // Generate Y-axis label based on channel type
+            const yAxisLabel = `Value (0-${{chMax}} ${{chTypeName}})`;
+            
+            // Add loop indicator to title
+            const loopIndicator = hasLoop ? ' 🔄 LOOP' : '';
             
             const trace = {{
                 x: curve.times,
@@ -1847,17 +2336,18 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                 type: 'scatter',
                 mode: 'lines',
                 fill: 'tozeroy',
-                fillcolor: 'rgba(102, 126, 234, 0.3)',
+                fillcolor: hasLoop ? 'rgba(0, 188, 212, 0.3)' : 'rgba(102, 126, 234, 0.3)',
                 line: {{
-                    color: '#667eea',
-                    width: 2
+                    color: hasLoop ? '#00bcd4' : '#667eea',
+                    width: 2,
+                    shape: 'hv'  // Use step/horizontal-vertical for pulse visualization
                 }},
                 name: `Channel ${{chNum}} Intensity`
             }};
             
             const layout = {{
                 title: {{
-                    text: `PWM Intensity Over Time`,
+                    text: `Intensity Over Time${{loopIndicator}}`,
                     font: {{ size: 14, color: '#333' }}
                 }},
                 xaxis: {{
@@ -1867,8 +2357,8 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                     zeroline: true
                 }},
                 yaxis: {{
-                    title: 'PWM Value',
-                    range: [0, 260],
+                    title: yAxisLabel,
+                    range: [ylim.min, ylim.max],
                     showgrid: true,
                     gridcolor: '#e0e0e0',
                     zeroline: true
@@ -1886,7 +2376,147 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             }};
             
             Plotly.newPlot(plotDiv, [trace], layout, config);
+            
+            // Store plot info for "Now" indicator updates
+            plotDiv._plotInfo = {{
+                chNum: chNum,
+                ylim: ylim,
+                totalDuration: curve.times.length > 0 ? curve.times[curve.times.length - 1] : 0,
+                hasLoop: hasLoop
+            }};
         }});
+        
+        // Function to update "Now" indicator on all intensity plots
+        function updateNowIndicators() {{
+            if (!uploadTime) return;  // No upload time = no "now" indicator
+            
+            const now = new Date();
+            
+            Object.keys(channelIntensityData).forEach(chNum => {{
+                const plotDiv = document.getElementById(`intensity-plot-ch${{chNum}}`);
+                if (!plotDiv || !plotDiv._plotInfo) return;
+                
+                const info = plotDiv._plotInfo;
+                const hasLoop = info.hasLoop;
+                
+                // Calculate elapsed time - reference point depends on whether timeline includes wait pattern
+                // For LOOP channels: timeline skips wait pattern, so X=0 is when main pattern starts (channelStartTimes)
+                // For non-LOOP channels: timeline includes wait pattern, so X=0 is uploadTime
+                let elapsedMs;
+                if (hasLoop) {{
+                    // LOOP: timeline starts after wait, use channel-specific start time
+                    const channelStart = channelStartTimes[chNum];
+                    if (!channelStart) return;
+                    elapsedMs = now - channelStart;
+                }} else {{
+                    // Non-LOOP: timeline includes wait from upload, use uploadTime
+                    elapsedMs = now - uploadTime;
+                }}
+                
+                // Timeline is in calibrated time (time_ms_original), which matches real-world time
+                // No calibFactor needed here since time_ms_original already represents expected real duration
+                let elapsedSec = elapsedMs / 1000;
+                
+                // For LOOP channels, wrap elapsed time to show current position in cycle
+                let loopIteration = 0;
+                if (hasLoop && elapsedSec > 0 && info.totalDuration > 0) {{
+                    loopIteration = Math.floor(elapsedSec / info.totalDuration);
+                    elapsedSec = elapsedSec % info.totalDuration;
+                }}
+                
+                // Create "Now" indicator shape (vertical line)
+                const shapes = [];
+                const annotations = [];
+                
+                // Show position indicator (loops for LOOP channels)
+                if (elapsedSec >= 0 && (hasLoop || elapsedSec <= info.totalDuration)) {{
+                    shapes.push({{
+                        type: 'line',
+                        x0: elapsedSec,
+                        x1: elapsedSec,
+                        y0: info.ylim.min,
+                        y1: info.ylim.max,
+                        line: {{
+                            color: hasLoop ? '#00bcd4' : '#ff4444',
+                            width: 2,
+                            dash: 'dot'
+                        }}
+                    }});
+                    
+                    const nowText = hasLoop ? `🔄 LOOP #${{loopIteration + 1}}` : '⏱ NOW';
+                    annotations.push({{
+                        x: elapsedSec,
+                        y: info.ylim.max,
+                        xref: 'x',
+                        yref: 'y',
+                        text: nowText,
+                        showarrow: false,
+                        font: {{
+                            color: hasLoop ? '#00bcd4' : '#ff4444',
+                            size: 10,
+                            family: 'Arial, sans-serif'
+                        }},
+                        bgcolor: 'rgba(255, 255, 255, 0.8)',
+                        bordercolor: hasLoop ? '#00bcd4' : '#ff4444',
+                        borderwidth: 1,
+                        borderpad: 2,
+                        yshift: 10
+                    }});
+                }} else if (!hasLoop && elapsedSec > info.totalDuration) {{
+                    // Protocol completed (only for non-loop channels)
+                    annotations.push({{
+                        x: info.totalDuration,
+                        y: info.ylim.max,
+                        xref: 'x',
+                        yref: 'y',
+                        text: '✓ DONE',
+                        showarrow: false,
+                        font: {{
+                            color: '#28a745',
+                            size: 10,
+                            family: 'Arial, sans-serif'
+                        }},
+                        bgcolor: 'rgba(255, 255, 255, 0.8)',
+                        bordercolor: '#28a745',
+                        borderwidth: 1,
+                        borderpad: 2,
+                        yshift: 10
+                    }});
+                }} else {{
+                    // Waiting to start (elapsedSec < 0)
+                    annotations.push({{
+                        x: 0,
+                        y: info.ylim.max,
+                        xref: 'x',
+                        yref: 'y',
+                        text: '⏳ WAITING',
+                        showarrow: false,
+                        font: {{
+                            color: '#ffc107',
+                            size: 10,
+                            family: 'Arial, sans-serif'
+                        }},
+                        bgcolor: 'rgba(255, 255, 255, 0.8)',
+                        bordercolor: '#ffc107',
+                        borderwidth: 1,
+                        borderpad: 2,
+                        yshift: 10
+                    }});
+                }}
+                
+                // Update the plot with shapes/annotations
+                Plotly.relayout(plotDiv, {{
+                    shapes: shapes,
+                    annotations: annotations
+                }});
+            }});
+        }}
+        
+        // Start "Now" indicator updates (every second)
+        if (uploadTime) {{
+            updateNowIndicators();  // Initial update
+            setInterval(updateNowIndicators, 1000);
+        }}
     </script>
 </body>
 </html>
@@ -1932,7 +2562,7 @@ def main():
     
     # Parse commands
     print(f"Parsing commands from: {args.commands_file}")
-    channels, calib_factor = parse_commands(args.commands_file)
+    channels, calib_factor, loop_info, channel_types = parse_commands(args.commands_file)
     
     if not channels:
         print("Error: No channels found in commands file")
@@ -1940,6 +2570,12 @@ def main():
     
     print(f"Found {len(channels)} channels")
     print(f"Calibration Factor: {calib_factor:.5f}")
+    if channel_types:
+        type_names = {'P': 'PWM', 'D': 'DAC', 'M': 'MCP4728', 'B': 'Binary'}
+        ch_info = [f'CH{i+1}:{type_names.get(t, t)}' for i, t in enumerate(channel_types)]
+        print(f"Channel Types: {', '.join(ch_info)}")
+    if loop_info:
+        print(f"LOOP enabled for channels: {[f'CH{ch}' for ch, v in loop_info.items() if v]}")
     
     # Parse upload time (or fallback to start_time for backward compatibility)
     upload_time = None
@@ -2015,7 +2651,7 @@ def main():
     
     # Generate HTML
     print(f"Generating HTML visualization...")
-    generate_html(channels, positions, output_file, upload_time, channel_start_times)
+    generate_html(channels, positions, output_file, upload_time, channel_start_times, loop_info, channel_types, calib_factor)
 
 
 if __name__ == '__main__':
