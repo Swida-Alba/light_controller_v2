@@ -57,3 +57,12 @@ WAIT_STATUS: {'CH1': 1, 'CH2': 0, 'CH3': 1, 'CH4': 0}
 
 WAIT_PULSE: {'CH1': {'period': 2000, 'pw': 100}}
 
+# ----------------------------------------------------------------------------
+# LOOP (OPTIONAL - defaults to 0/stop if not specified)
+# ----------------------------------------------------------------------------
+# Format: LOOP: {'CH1': 0, 'CH2': 1, ...}
+# Values: 0 = Stop after completing all patterns (default)
+#         1 = Loop forever (restart patterns after completion)
+
+LOOP: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}
+

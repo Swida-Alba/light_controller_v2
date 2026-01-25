@@ -43,8 +43,77 @@ except ImportError:
     DASH_AVAILABLE = False
 
 
+# Value range constants for different output types
+VALUE_RANGE_BINARY = (0, 1)      # Binary: 0 or 1
+VALUE_RANGE_PWM = (0, 255)       # PWM: 8-bit
+VALUE_RANGE_DAC = (0, 4095)      # DAC: 12-bit
+
+def detect_value_range(values):
+    """
+    Detect the value range type from observed values.
+    Returns (min_val, max_val, range_type) where range_type is 'binary', 'pwm', or 'dac'.
+    """
+    if not values:
+        return 0, 255, 'pwm'  # Default to PWM range
+    
+    max_val = max(values)
+    min_val = min(values)
+    
+    if max_val <= 1:
+        return 0, 1, 'binary'
+    elif max_val <= 255:
+        return 0, 255, 'pwm'
+    else:
+        return 0, 4095, 'dac'
+
+def calculate_dynamic_ylim(values, padding_pct=0.1):
+    """
+    Calculate dynamic Y-axis limits based on actual data values.
+    Adds padding for visual clarity.
+    
+    Args:
+        values: List of values
+        padding_pct: Padding percentage (default 10%)
+    
+    Returns:
+        (y_min, y_max) tuple
+    """
+    if not values:
+        return -5, 260  # Default PWM range
+    
+    data_min = min(values)
+    data_max = max(values)
+    
+    # Detect range type
+    _, range_max, range_type = detect_value_range(values)
+    
+    # For narrow ranges, center the view with padding
+    data_range = data_max - data_min
+    if data_range == 0:
+        data_range = max(1, data_max * 0.1)  # Prevent zero range
+    
+    padding = max(data_range * padding_pct, range_max * 0.02)  # At least 2% of full range
+    
+    y_min = max(0, data_min - padding)
+    y_max = min(range_max * 1.05, data_max + padding)  # Cap at 105% of max range
+    
+    # Ensure minimum visible range
+    if y_max - y_min < range_max * 0.05:
+        y_max = y_min + range_max * 0.1
+    
+    return y_min, y_max
+
+
 class SerialMonitor:
-    """Monitor and plot Arduino channel values in real-time"""
+    """Monitor and plot Arduino channel values in real-time
+    
+    Supports multiple value ranges:
+    - Binary: 0-1 (digital on/off)
+    - PWM: 0-255 (8-bit)
+    - DAC: 0-4095 (12-bit, e.g., MCP4728)
+    
+    Y-axis automatically adjusts to fit actual data values.
+    """
     
     def __init__(self, port=None, baud=9600, max_points=300, output_file=None):
         """
@@ -65,6 +134,8 @@ class SerialMonitor:
         
         # Data storage: {channel_num: {'times': [], 'values': []}}
         self.channel_data = {}
+        # Track detected value range per channel: {channel_num: 'binary'|'pwm'|'dac'}
+        self.channel_ranges = {}
         self.start_time = time.time()
         self.last_update_time = self.start_time
         
@@ -176,7 +247,10 @@ class SerialMonitor:
             self.csv_file.flush()
     
     def print_values(self, channels):
-        """Print current channel values to console"""
+        """Print current channel values to console with adaptive bar display.
+        
+        Automatically detects value range (binary/PWM/DAC) and scales bar accordingly.
+        """
         current_time = time.time()
         if current_time - self.last_print_time < 0.5:  # Print max 2x per second
             return
@@ -185,11 +259,38 @@ class SerialMonitor:
         
         status = f"⏱️  {elapsed_s:6.1f}s | "
         for ch in range(1, 5):
-            pwm = channels.get(ch, 0)
-            # Create a simple bar chart with █ blocks
-            bar_length = pwm // 25  # 255 / 10 = 25.5 per block
+            value = channels.get(ch, 0)
+            
+            # Detect and track range type for this channel
+            if ch not in self.channel_ranges:
+                if value > 255:
+                    self.channel_ranges[ch] = 'dac'
+                elif value > 1:
+                    self.channel_ranges[ch] = 'pwm'
+                else:
+                    self.channel_ranges[ch] = 'binary'
+            elif value > 255 and self.channel_ranges[ch] != 'dac':
+                self.channel_ranges[ch] = 'dac'
+            elif value > 1 and self.channel_ranges[ch] == 'binary':
+                self.channel_ranges[ch] = 'pwm'
+            
+            # Calculate bar based on detected range
+            range_type = self.channel_ranges.get(ch, 'pwm')
+            if range_type == 'dac':
+                max_val = 4095
+                bar_length = int((value / max_val) * 10)
+                value_str = f"{value:4d}"
+            elif range_type == 'binary':
+                max_val = 1
+                bar_length = 10 if value else 0
+                value_str = f"{value:1d}   "
+            else:  # pwm
+                max_val = 255
+                bar_length = int((value / max_val) * 10)
+                value_str = f"{value:3d} "
+            
             bar = '█' * bar_length + '░' * (10 - bar_length)
-            status += f"CH{ch}: {pwm:3d} [{bar}] | "
+            status += f"CH{ch}: {value_str}[{bar}] | "
         
         print(status)
         self.last_print_time = current_time
@@ -325,12 +426,20 @@ class SerialMonitor:
             
             colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe']
             
+            # Calculate dynamic X-axis range (show sliding window of time)
+            x_max = 0
+            x_min = 0
             if data_copy:
                 for idx, ch in enumerate(sorted(data_copy.keys()), 1):
                     d = data_copy[ch]
                     # Limit points for performance
                     times = d['times'][-self.max_live_points:]
                     values = d['values'][-self.max_live_points:]
+                    
+                    # Track x-axis range across all channels
+                    if times:
+                        x_max = max(x_max, max(times))
+                        x_min = min(x_min, min(times)) if x_min == 0 else min(x_min, min(times))
                     
                     fig.add_trace(
                         go.Scatter(
@@ -343,12 +452,28 @@ class SerialMonitor:
                         ),
                         row=idx, col=1
                     )
-                    fig.update_yaxes(range=[0, 260], row=idx, col=1)
+                    
+                    # Dynamic Y-axis based on actual data values
+                    y_min, y_max = calculate_dynamic_ylim(values)
+                    _, _, range_type = detect_value_range(values)
+                    
+                    # Add range indicator to Y-axis title
+                    range_labels = {'binary': '0-1', 'pwm': '0-255', 'dac': '0-4095'}
+                    fig.update_yaxes(
+                        range=[y_min, y_max],
+                        title_text=f"Value ({range_labels.get(range_type, '0-255')})",
+                        row=idx, col=1
+                    )
+                
+                # Update X-axis range to show sliding window with padding
+                x_padding = max(5, (x_max - x_min) * 0.02)  # At least 5s or 2% padding
+                fig.update_xaxes(range=[x_min - x_padding, x_max + x_padding])
             else:
-                # No data yet - show empty placeholder
+                # No data yet - show empty placeholder with default PWM range
                 for idx in range(1, 5):
                     fig.add_trace(go.Scatter(x=[], y=[], name=f'Ch {idx}'), row=idx, col=1)
-                    fig.update_yaxes(range=[0, 260], row=idx, col=1)
+                    fig.update_yaxes(range=[0, 260], title_text="Value (0-255)", row=idx, col=1)
+                fig.update_xaxes(range=[0, 60])  # Default 60s window when no data
             
             fig.update_layout(
                 hovermode='x unified',

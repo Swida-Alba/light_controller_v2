@@ -6,6 +6,11 @@ in protocol_parser.py. It encapsulates all protocol parsing, validation, calibra
 and command generation logic.
 
 Usage:
+    # Command line:
+    python light_controller_parser.py protocol.txt --live-plot
+    python light_controller_parser.py --port /dev/cu.usbmodem14301 --live-plot
+    
+    # As a module:
     from light_controller_parser import LightControllerParser
     
     # Create parser instance
@@ -22,8 +27,30 @@ Usage:
 """
 
 import os
+import sys
+import argparse
 import datetime
+import time
+import threading
+from collections import deque
+
+# Import syntax checker for protocol validation
+try:
+    from syntax_check import ProtocolSyntaxChecker
+    SYNTAX_CHECK_AVAILABLE = True
+except ImportError:
+    SYNTAX_CHECK_AVAILABLE = False
 from lcfunc import *
+
+# Try to import plotting libraries
+try:
+    from dash import Dash, dcc, html
+    from dash.dependencies import Input, Output
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    DASH_AVAILABLE = True
+except ImportError:
+    DASH_AVAILABLE = False
 
 
 class LightControllerParser:
@@ -98,6 +125,7 @@ class LightControllerParser:
         self.start_time = {}
         self.wait_status = {}
         self.wait_pulse = {}
+        self.loop = {}  # Loop mode for each channel (0=no loop, 1=loop forever)
         self.cmd_patterns = []
         self.cmd_wait = []
         self.arduino_config = {}  # Arduino configuration from greeting
@@ -105,6 +133,63 @@ class LightControllerParser:
         # Validate file extension
         if self.file_ext not in ['.txt', '.xlsx']:
             raise ValueError(f'Unsupported file format: {self.file_ext}. Please use .xlsx or .txt files.')
+        
+        # Validate syntax for TXT files before parsing
+        if self.file_ext == '.txt':
+            self.validate_protocol()
+    
+    def validate_protocol(self, strict=True):
+        """
+        Validate protocol syntax before parsing.
+        
+        Uses the ProtocolSyntaxChecker to validate the protocol file for
+        syntax errors, typos, and structural issues before parsing.
+        
+        Args:
+            strict (bool): If True, raise exception on errors. If False, only warn.
+            
+        Raises:
+            ValueError: If syntax errors found and strict=True
+        """
+        if not SYNTAX_CHECK_AVAILABLE:
+            print('⚠️  Syntax checker not available (syntax_check.py not found)')
+            print('   Skipping syntax validation...')
+            return
+        
+        if self.file_ext != '.txt':
+            # Only TXT files support full syntax validation currently
+            return
+        
+        print('\n' + '='*60)
+        print('🔍 Validating protocol syntax...')
+        print('='*60)
+        
+        checker = ProtocolSyntaxChecker()
+        is_valid, errors, warnings = checker.check_file(self.protocol_file)
+        
+        # Print warnings (always)
+        if warnings:
+            print(f'\n⚠️  Warnings ({len(warnings)}):')
+            for warning in warnings:
+                print(f'   • {warning}')
+        
+        # Print errors
+        if errors:
+            print(f'\n❌ Syntax Errors ({len(errors)}):')
+            for error in errors:
+                print(f'   • {error}')
+            
+            if strict:
+                raise ValueError(
+                    f'Protocol syntax validation failed with {len(errors)} error(s). '
+                    f'Fix the errors above or run with syntax validation disabled.'
+                )
+            else:
+                print('\n⚠️  Continuing despite errors (strict=False)...')
+        else:
+            print('\n✅ Protocol syntax is valid!')
+        
+        print('='*60 + '\n')
     
     def _detect_pattern_length_from_commands(self, commands):
         """
@@ -209,7 +294,7 @@ class LightControllerParser:
                 import pandas as pd
                 return pd.DataFrame({'dummy': [1]})
     
-    def setup_serial(self, board_type='Arduino', baudrate=9600, verify_pattern_length=True, **kwargs):
+    def setup_serial(self, board_type='Arduino', baudrate=9600, verify_pattern_length=True, port_override=None, skip_checks=False, **kwargs):
         """
         Setup serial connection to Arduino with optional pattern length verification.
         
@@ -217,6 +302,8 @@ class LightControllerParser:
             board_type (str): Type of Arduino board
             baudrate (int): Serial baud rate
             verify_pattern_length (bool): Verify Arduino PATTERN_LENGTH matches protocol requirements (default: True)
+            port_override (str): Optional specific serial port to use (auto-detect if None)
+            skip_checks (bool): Skip memory and pulse mode compatibility checks (default: False)
             **kwargs: Additional serial port parameters
             
         Returns:
@@ -225,12 +312,45 @@ class LightControllerParser:
         Raises:
             ValueError: If pattern length verification fails
         """
+        # Handle port: use port_override if specified, otherwise use port from kwargs, otherwise auto-detect
+        if port_override is not None:
+            kwargs['port'] = port_override
         self.ser = SetUpSerialPort(board_type=board_type, baudrate=baudrate, **kwargs)
         if not self.ser:
             return False
         
         # Clear buffer
         ClearSerialBuffer(self.ser, print_flag=True)
+        
+        # Skip memory and pulse mode checks if requested
+        if skip_checks:
+            print("\n⚡ Skipping memory and pulse mode checks (--skip-check enabled)")
+            print("   Use this when Arduino is stuck/unresponsive after a previous session")
+            
+            # Still need to send greeting and get basic config
+            if verify_pattern_length:
+                print("\n📏 Detecting pattern length from protocol...")
+                self.generate_pattern_commands()
+                max_pattern_length = self._detect_pattern_length_from_commands(self.cmd_patterns)
+                max_ramp_segments = self._detect_max_ramp_segments_from_commands(self.cmd_patterns)
+                
+                # Send greeting without strict verification
+                try:
+                    arduino_config = SendGreeting(self.ser, expected_pattern_length=max_pattern_length,
+                                                  expected_max_ramp_segments=max_ramp_segments if max_ramp_segments > 0 else None)
+                    self.arduino_config = arduino_config
+                except Exception as e:
+                    print(f"\033[33m⚠️  Greeting warning (continuing anyway): {e}\033[0m")
+                    self.arduino_config = {}
+            else:
+                try:
+                    arduino_config = SendGreeting(self.ser)
+                    self.arduino_config = arduino_config
+                except Exception as e:
+                    print(f"\033[33m⚠️  Greeting warning (continuing anyway): {e}\033[0m")
+                    self.arduino_config = {}
+            
+            return True
         
         # Check memory and pulse mode compatibility
         print("\n💾 Checking Arduino memory and pulse mode compatibility...")
@@ -284,9 +404,13 @@ class LightControllerParser:
             # Detect maximum RAMP segments from commands
             max_ramp_segments = self._detect_max_ramp_segments_from_commands(self.cmd_patterns)
             
-            if max_pattern_length > 0:
+            # Check if we have any pattern or RAMP commands
+            has_commands = max_pattern_length > 0 or max_ramp_segments > 0
+            
+            if has_commands:
                 print(f"\n📏 Protocol pattern analysis:")
-                print(f"   Required PATTERN_LENGTH: {max_pattern_length}")
+                if max_pattern_length > 0:
+                    print(f"   Required PATTERN_LENGTH: {max_pattern_length}")
                 if max_ramp_segments > 0:
                     print(f"   Required MAX_RAMP_SEGMENTS: {max_ramp_segments}")
                 
@@ -303,7 +427,7 @@ class LightControllerParser:
                 print(f"   Arduino PATTERN_LENGTH:  {arduino_pl}")
                 
                 # STRICT CHECK: Raise error if commands exceed Arduino capability
-                if max_pattern_length > arduino_pl:
+                if max_pattern_length > 0 and max_pattern_length > arduino_pl:
                     print(f"\n{'='*70}")
                     print("❌ ERROR: Pattern length exceeds Arduino capability!")
                     print(f"{'='*70}")
@@ -432,17 +556,18 @@ class LightControllerParser:
         Parse TXT protocol file.
         
         Returns:
-            tuple: (pattern_commands, start_time, wait_status, wait_pulse, calib_factor)
+            tuple: (pattern_commands, start_time, wait_status, wait_pulse, loop, calib_factor)
         """
         print('Reading TXT protocol file...')
         # Read values from file into locals; do not unconditionally overwrite
         # an existing calibration factor (e.g. one provided by preview_only).
-        cmd_patterns_raw, file_start_time, file_wait_status, file_wait_pulse, file_calib = ReadTxtFile(self.protocol_file)
+        cmd_patterns_raw, file_start_time, file_wait_status, file_wait_pulse, file_loop, file_calib = ReadTxtFile(self.protocol_file)
 
-        # Accept file-provided start/wait/pulse values
+        # Accept file-provided start/wait/pulse/loop values
         self.start_time = file_start_time
         self.wait_status = file_wait_status
         self.wait_pulse = file_wait_pulse
+        self.loop = file_loop
 
         # Only use file calibration if explicitly present; otherwise preserve
         # any existing self.calib_factor (set by preview_only or elsewhere).
@@ -453,21 +578,8 @@ class LightControllerParser:
                 # Default to 1.0 (uncalibrated) if nothing has been set
                 self.calib_factor = 1.0
         
-        # Check for uncalibrated time and issue warning
-        if self.calib_factor is not None and abs(self.calib_factor - 1.0) < 1e-9:
-            print('\n' + '='*70)
-            print('⚠️  WARNING: Calibration factor is 1.000000')
-            print('='*70)
-            print('This indicates UNCALIBRATED time.')
-            print('The protocol will use Arduino\'s internal timer without correction.')
-            print('')
-            print('For accurate timing:')
-            print('  1. Run a calibration protocol first')
-            print('  2. Note the calibration factor (typically 1.0 ± 0.01)')
-            print('  3. Update CALIBRATION_FACTOR in your protocol file')
-            print('')
-            print('To calibrate: Use the calibrate() method with serial connection')
-            print('='*70 + '\n')
+        # Note: Calibration warning is deferred to after calibrate() is called
+        # This allows auto-calibration lookup to happen first
         
         # Extract valid channels from start_time
         self.valid_channels = [ch for ch in self.start_time.keys() if self.start_time[ch] is not None]
@@ -500,21 +612,8 @@ class LightControllerParser:
         print('Reading Excel protocol file...')
         df_protocol, df_startTime, self.calib_factor = ReadExcelFile(self.protocol_file)
         
-        # Check for uncalibrated time and issue warning
-        if self.calib_factor is not None and abs(self.calib_factor - 1.0) < 1e-9:
-            print('\n' + '='*70)
-            print('⚠️  WARNING: Calibration factor is 1.000000')
-            print('='*70)
-            print('This indicates UNCALIBRATED time.')
-            print('The protocol will use Arduino\'s internal timer without correction.')
-            print('')
-            print('For accurate timing:')
-            print('  1. Run a calibration protocol first')
-            print('  2. Note the calibration factor (typically 1.0 ± 0.01)')
-            print('  3. Update the calibration sheet in your Excel file')
-            print('')
-            print('To calibrate: Use the calibrate() method with serial connection')
-            print('='*70 + '\n')
+        # Note: Calibration warning is deferred to after calibrate() is called
+        # This allows auto-calibration lookup to happen first
         
         channel_units, self.valid_channels = GetChannelInfo(df_protocol)
         self.start_time, self.wait_status = ReadStartTime(df_startTime)
@@ -600,6 +699,158 @@ class LightControllerParser:
             print(f"\n   ⚠️  Note: Arduino MAX_PATTERN_NUM unknown (greeting didn't provide it)")
             print(f"   Cannot verify pattern capacity. Ensure patterns don't exceed Arduino limits.")
 
+    def _warn_if_uncalibrated(self):
+        """
+        Issue a warning if calibration factor is still 1.0 after calibration lookup.
+        This should be called AFTER calibrate() to allow auto-calibration lookup first.
+        """
+        if self.calib_factor is not None and abs(self.calib_factor - 1.0) < 1e-9:
+            print('\n' + '='*70)
+            print('⚠️  WARNING: Calibration factor is 1.000000')
+            print('='*70)
+            print('This indicates UNCALIBRATED time.')
+            print('The protocol will use Arduino\'s internal timer without correction.')
+            print('')
+            print('For accurate timing:')
+            print('  1. Run a calibration protocol first')
+            print('  2. Note the calibration factor (typically 1.0 ± 0.01)')
+            print('  3. Update CALIBRATION_FACTOR in your protocol file')
+            print('')
+            print('To calibrate: Use the calibrate() method with serial connection')
+            print('='*70 + '\n')
+
+    def _validate_value_ranges(self, commands):
+        """
+        Validate status values in commands against Arduino channel types.
+        
+        Warns about:
+        - 8-bit values (2-255) used on 12-bit channels (low resolution)
+        - Values >255 on 8-bit (PWM) channels (will be capped to 255)
+        - Values >4095 on any channel (will be capped to channel max)
+        
+        Args:
+            commands (list): List of command strings
+        """
+        import re
+        
+        # Get channel types from Arduino config
+        channel_types = self.arduino_config.get('channel_types', '')
+        if not channel_types:
+            return  # Can't validate without channel type info
+        
+        low_resolution_warnings = []
+        capping_warnings = []
+        
+        def check_value(val, ch_num, ch_type, context=""):
+            """Check a single value and add appropriate warnings."""
+            is_12bit = ch_type in ('D', 'M')  # DAC or MCP4728
+            is_8bit = ch_type == 'P'  # PWM
+            type_name = {'D': 'DAC', 'M': 'MCP4728', 'P': 'PWM', 'B': 'Binary'}.get(ch_type, ch_type)
+            
+            # Value > 4095: will be capped to channel max
+            if val > 4095:
+                max_val = 4095 if is_12bit else 255
+                capping_warnings.append(
+                    f"CH{ch_num} ({type_name}){context}: value {val} exceeds max, will be capped to {max_val}"
+                )
+            # Value 256-4095 on 8-bit channel: will be capped to 255
+            elif val > 255 and is_8bit:
+                capping_warnings.append(
+                    f"CH{ch_num} ({type_name}/8-bit){context}: value {val} exceeds 255, will be capped to 255"
+                )
+            # Value 2-255 on 12-bit channel: low resolution warning
+            elif 2 <= val <= 255 and is_12bit:
+                low_resolution_warnings.append(
+                    f"CH{ch_num} ({type_name}/12-bit){context}: value {val} is in 8-bit range. "
+                    f"Use 0-4095 or 0.0-1.0 for full resolution."
+                )
+        
+        for cmd in commands:
+            # Parse channel number
+            ch_match = re.search(r'CH:(\d+)', cmd)
+            if not ch_match:
+                continue
+            ch_num = int(ch_match.group(1))
+            ch_idx = ch_num - 1  # 0-based index
+            
+            if ch_idx >= len(channel_types):
+                continue
+            
+            ch_type = channel_types[ch_idx]
+            
+            # Check STATUS values
+            status_match = re.search(r'STATUS:([^;]+)', cmd)
+            if status_match:
+                status_str = status_match.group(1)
+                for val_str in status_str.split(','):
+                    val_str = val_str.strip()
+                    if not val_str:
+                        continue
+                    
+                    # Check if it's a normalized value (0.0-1.0)
+                    if '.' in val_str:
+                        try:
+                            val = float(val_str)
+                            if 0.0 <= val <= 1.0:
+                                continue  # Normalized value is fine
+                        except ValueError:
+                            pass
+                    
+                    # Integer value check
+                    try:
+                        val = int(float(val_str))
+                        check_value(val, ch_num, ch_type)
+                    except ValueError:
+                        pass
+            
+            # Check RAMP values
+            ramp_match = re.search(r'RAMP:([^;]+)', cmd)
+            if ramp_match:
+                ramp_str = ramp_match.group(1)
+                # Extract numeric values from ramp segments
+                # Format: (L:0,255,10000) or (C:1200,1450,60000)
+                segments = re.findall(r'\(([^)]+)\)', ramp_str)
+                for seg in segments:
+                    parts = seg.split(':')
+                    if len(parts) >= 2:
+                        params = parts[1].split('|')[0]  # Remove t_range if present
+                        param_list = params.split(',')
+                        if len(param_list) >= 2:
+                            for val_str in param_list[:2]:  # start and end values
+                                try:
+                                    val = int(float(val_str))
+                                    check_value(val, ch_num, ch_type, " RAMP")
+                                except ValueError:
+                                    pass
+        
+        # Print capping warnings (more serious - values will be changed)
+        if capping_warnings:
+            unique_capping = list(dict.fromkeys(capping_warnings))
+            print(f"\n{'='*70}")
+            print("⚠️  VALUE CAPPING WARNINGS")
+            print(f"{'='*70}")
+            for w in unique_capping[:10]:
+                print(f"  • {w}")
+            if len(unique_capping) > 10:
+                print(f"  ... and {len(unique_capping) - 10} more warnings")
+            print(f"\nNote: These values WILL BE CAPPED by Arduino to the channel's maximum.")
+            print(f"      PWM (8-bit): max 255 | DAC/MCP4728 (12-bit): max 4095")
+            print(f"{'='*70}\n")
+        
+        # Print low resolution warnings (informational)
+        if low_resolution_warnings:
+            unique_low_res = list(dict.fromkeys(low_resolution_warnings))
+            print(f"\n{'='*70}")
+            print("ℹ️  LOW RESOLUTION WARNINGS")
+            print(f"{'='*70}")
+            for w in unique_low_res[:10]:
+                print(f"  • {w}")
+            if len(unique_low_res) > 10:
+                print(f"  ... and {len(unique_low_res) - 10} more warnings")
+            print(f"\nNote: Values are accepted but may have lower resolution than expected.")
+            print(f"      For 12-bit channels, use 0-4095 (integers) or 0.0-1.0 (normalized).")
+            print(f"{'='*70}\n")
+
     def generate_pattern_commands(self):
         """
         Generate pattern commands based on file type.
@@ -615,6 +866,9 @@ class LightControllerParser:
             if self.ser:
                 self.calibrate()
             
+            # Check for uncalibrated time AFTER calibrate() (which may load stored calibration)
+            self._warn_if_uncalibrated()
+            
             # Apply calibration to pattern commands
             self.cmd_patterns = ApplyCalibrationToTxtCommands(pattern_commands_converted, self.calib_factor)
             
@@ -625,6 +879,9 @@ class LightControllerParser:
             # Calibrate if serial connection is active
             if self.ser:
                 self.calibrate()
+            
+            # Check for uncalibrated time AFTER calibrate() (which may load stored calibration)
+            self._warn_if_uncalibrated()
             
             # Evaluate compression efficiency for different pattern lengths
             print(f'\nEvaluating pattern compression efficiency...')
@@ -661,6 +918,8 @@ class LightControllerParser:
         # Validate pattern count capacity (for both TXT and Excel)
         if self.cmd_patterns and self.arduino_config:
             self._validate_pattern_capacity(self.cmd_patterns)
+            # Validate value ranges against channel types
+            self._validate_value_ranges(self.cmd_patterns)
         
         return self.cmd_patterns
     
@@ -684,7 +943,7 @@ class LightControllerParser:
     
     def send_commands(self):
         """
-        Send all commands to Arduino (pattern commands + wait commands).
+        Send all commands to Arduino (pattern commands + wait commands + loop settings).
         
         Returns:
             bool: True if all commands sent successfully
@@ -701,7 +960,71 @@ class LightControllerParser:
         for cmd_t in self.cmd_wait:
             SendCommand(self.ser, cmd_t)
         
+        # Send LOOP commands if any channels have LOOP enabled
+        if self.loop:
+            for ch_name, loop_value in self.loop.items():
+                if loop_value == 1:
+                    # Extract channel number from 'CH1', 'CH2', etc.
+                    ch_num = int(ch_name[2:]) if ch_name.startswith('CH') else int(ch_name)
+                    loop_cmd = f"LOOP:CH:{ch_num}:VALUE:1\n"
+                    SendCommand(self.ser, loop_cmd)
+                    print(f"  🔄 LOOP enabled for {ch_name}")
+        
         return True
+    
+    def get_channel_durations(self):
+        """
+        Calculate the total duration for each channel from pattern commands.
+        This is used for LOOP tracking in the real-time monitor.
+        
+        Returns:
+            dict: {'CH1': duration_ms, 'CH2': duration_ms, ...}
+        """
+        import re
+        
+        durations = {}
+        for cmd in self.cmd_patterns:
+            # Parse: PATTERN:1;CH:1;STATUS:0,1;TIME_MS:10000,10000;REPEATS:4
+            # Or: PATTERN:1;CH:1;RAMP:(C:0,255,10000);REPEATS:1
+            ch_match = re.search(r'CH:(\d+)', cmd)
+            if not ch_match:
+                continue
+            
+            ch_num = int(ch_match.group(1))
+            ch_key = f'CH{ch_num}'
+            
+            if ch_key not in durations:
+                durations[ch_key] = 0
+            
+            # Get repeats
+            repeats_match = re.search(r'REPEATS:(\d+)', cmd)
+            repeats = int(repeats_match.group(1)) if repeats_match else 1
+            
+            # Try to get TIME_MS
+            time_match = re.search(r'TIME_MS:([\d,]+)', cmd)
+            if time_match:
+                times = [int(t) for t in time_match.group(1).split(',')]
+                cycle_duration = sum(times)
+                durations[ch_key] += cycle_duration * repeats
+            else:
+                # Try RAMP format: RAMP:(L:0,255,10000),(C:255,0,5000)
+                ramp_match = re.search(r'RAMP:\(([^)]+)\)', cmd)
+                if ramp_match:
+                    # Find all ramp segments and sum their durations
+                    ramp_str = cmd[cmd.find('RAMP:'):]
+                    seg_pattern = re.findall(r'\(([^)]+)\)', ramp_str)
+                    ramp_duration = 0
+                    for seg_str in seg_pattern:
+                        # Format: L:0,255,10000 or X:0,255,10000|0,2
+                        parts = seg_str.split(':')
+                        if len(parts) >= 2:
+                            params = parts[1].split('|')[0]  # Remove t_range if present
+                            param_parts = params.split(',')
+                            if len(param_parts) >= 3:
+                                ramp_duration += int(param_parts[2])  # duration is 3rd param
+                    durations[ch_key] += ramp_duration * repeats
+        
+        return durations
     
     def preview(self, show_wait=True, show_patterns=True, max_commands=None):
         """
@@ -830,6 +1153,11 @@ class LightControllerParser:
             f.write(f'# Active Channels: {", ".join(self.valid_channels)}\n')
             f.write(f'# Calibration Factor: {self.calib_factor:.5f}\n')
             f.write(f'# Time Correction: {(self.calib_factor - 1) * 12 * 3600:.2f} seconds per 12 hours\n')
+            
+            # Write channel types (for visualization normalization)
+            channel_types = self.arduino_config.get('channel_types', '')
+            if channel_types:
+                f.write(f'# Channel Types: {channel_types}\n')
             f.write('# ========================================\n')
             f.write('\n')
             
@@ -847,13 +1175,17 @@ class LightControllerParser:
                     f.write(cmd_t)
                 f.write('\n')
             
-            # Write footer
+            # Write footer with execution info
             f.write('# ========================================\n')
             f.write('# Execution Info\n')
             f.write('# ========================================\n')
             for ch in self.valid_channels:
                 f.write(f'# {ch} Start Time: {start_time_str.get(ch, "N/A")}\n')
                 f.write(f'# {ch} Wait Status: {self.wait_status.get(ch, "N/A")}\n')
+            
+            # Write LOOP info (machine-readable format for viz_protocol_html.py)
+            if self.loop:
+                f.write(f'# LOOP: {self.loop}\n')
             f.write('# ========================================\n')
         
         print(f'Commands are written to {commands_file}.')
@@ -912,6 +1244,263 @@ class LightControllerParser:
         
         return preview_data
     
+    def start_live_monitor(self, update_interval_ms=100, max_points=500):
+        """
+        Start real-time live plotting dashboard to monitor channel values.
+        
+        This runs a Dash web server that displays real-time channel values
+        as the protocol executes on the Arduino.
+        
+        Args:
+            update_interval_ms: Refresh rate in milliseconds (default: 100ms = 10Hz)
+            max_points: Maximum data points to display (default: 500)
+        """
+        if not DASH_AVAILABLE:
+            print("❌ Dash not available for real-time plotting.")
+            print("   Install with: pip install dash plotly")
+            print("   Falling back to console-only mode...")
+            return self._console_monitor()
+        
+        if not self.ser:
+            print("❌ No serial connection available for monitoring")
+            return
+        
+        print("\n" + "="*60)
+        print("🚀 Starting REAL-TIME Live Plot Dashboard...")
+        print("="*60)
+        print(f"   Open your browser to: http://127.0.0.1:8050")
+        print("   Press Ctrl+C to stop monitoring")
+        print("="*60 + "\n")
+        
+        # Initialize monitoring data
+        self._live_data_lock = threading.Lock()
+        self._live_running = True
+        self._max_live_points = max_points
+        self._channel_data = {}
+        self._data_points_received = 0
+        self._monitor_start_time = time.time()
+        
+        # Channel max values from Arduino config
+        self._channel_max_values = {}
+        if self.arduino_config:
+            ch_max_list = self.arduino_config.get('channel_max_values', [])
+            for i, max_val in enumerate(ch_max_list, 1):
+                self._channel_max_values[i] = max_val
+        
+        # Start serial reading in background thread
+        serial_thread = threading.Thread(target=self._live_serial_reader, daemon=True)
+        serial_thread.start()
+        
+        # Create Dash app
+        app = Dash(__name__)
+        
+        app.layout = html.Div([
+            html.H1("🌈 Light Controller - Real-Time Monitor", 
+                    style={'textAlign': 'center', 'color': '#667eea'}),
+            html.Div(id='status-bar', style={
+                'textAlign': 'center', 
+                'padding': '10px',
+                'backgroundColor': '#f0f0f0',
+                'marginBottom': '20px',
+                'borderRadius': '5px'
+            }),
+            dcc.Graph(id='live-graph', style={'height': '70vh'}),
+            dcc.Interval(
+                id='interval-component',
+                interval=update_interval_ms,
+                n_intervals=0
+            )
+        ], style={'fontFamily': 'Arial, sans-serif', 'padding': '20px'})
+        
+        @app.callback(
+            [Output('live-graph', 'figure'),
+             Output('status-bar', 'children')],
+            [Input('interval-component', 'n_intervals')]
+        )
+        def update_graph(n):
+            with self._live_data_lock:
+                data_copy = {ch: {'times': list(d['times']), 'values': list(d['values'])} 
+                            for ch, d in self._channel_data.items()}
+                points = self._data_points_received
+            
+            num_channels = len(data_copy) if data_copy else 4
+            fig = make_subplots(
+                rows=num_channels, cols=1,
+                subplot_titles=[f"Channel {i}" for i in range(1, num_channels + 1)],
+                shared_xaxes=True,
+                vertical_spacing=0.08
+            )
+            
+            colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b']
+            
+            if data_copy:
+                for idx, ch in enumerate(sorted(data_copy.keys()), 1):
+                    d = data_copy[ch]
+                    times = d['times'][-self._max_live_points:]
+                    values = d['values'][-self._max_live_points:]
+                    
+                    # Get max value for this channel
+                    max_val = self._channel_max_values.get(ch, 255)
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=times,
+                            y=values,
+                            name=f'Ch {ch}',
+                            mode='lines',
+                            fill='tozeroy',
+                            line=dict(color=colors[(ch-1) % len(colors)], width=2)
+                        ),
+                        row=idx, col=1
+                    )
+                    fig.update_yaxes(range=[0, max_val * 1.05], row=idx, col=1)
+            else:
+                for idx in range(1, 5):
+                    fig.add_trace(go.Scatter(x=[], y=[], name=f'Ch {idx}'), row=idx, col=1)
+                    max_val = self._channel_max_values.get(idx, 255)
+                    fig.update_yaxes(range=[0, max_val * 1.05], row=idx, col=1)
+            
+            fig.update_layout(
+                hovermode='x unified',
+                showlegend=False,
+                margin=dict(l=60, r=30, t=40, b=40),
+                paper_bgcolor='white',
+                plot_bgcolor='#fafafa'
+            )
+            fig.update_xaxes(title_text="Time (seconds)", row=num_channels, col=1)
+            
+            elapsed = time.time() - self._monitor_start_time
+            status = f"⏱️ Running for {elapsed:.1f}s | 📊 {points} data points | 🔄 Refresh: {update_interval_ms}ms"
+            
+            return fig, status
+        
+        try:
+            # Open browser automatically
+            import webbrowser
+            webbrowser.open('http://127.0.0.1:8050')
+            app.run(debug=False, use_reloader=False)
+        except KeyboardInterrupt:
+            print("\n⏹️  Stopping live monitor...")
+        finally:
+            self._live_running = False
+            self._print_monitor_summary()
+    
+    def _live_serial_reader(self):
+        """Background thread for reading serial data during live plotting."""
+        while self._live_running:
+            try:
+                if self.ser and self.ser.in_waiting > 0:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    
+                    if not line:
+                        continue
+                    
+                    # Parse $CHMON: messages
+                    channel_values = self._parse_channel_monitor(line)
+                    
+                    if channel_values:
+                        with self._live_data_lock:
+                            self._update_monitor_data(channel_values)
+                    else:
+                        # Print non-channel messages (like Arrivederci)
+                        if not line.startswith('$') and line:
+                            print(f"  Arduino: {line}")
+                else:
+                    time.sleep(0.01)
+            except Exception as e:
+                if self._live_running:
+                    pass  # Silently ignore errors during shutdown
+                time.sleep(0.1)
+    
+    def _parse_channel_monitor(self, line):
+        """
+        Parse channel monitor message from Arduino.
+        Format: $CHMON:CH1:pwm1,CH2:pwm2,CH3:pwm3,CH4:pwm4
+        
+        Returns: dict {channel_num: pwm_value} or None
+        """
+        if not line.startswith('$CHMON:'):
+            return None
+        
+        try:
+            data_str = line[7:]  # Remove '$CHMON:' prefix
+            channels = {}
+            
+            for ch_data in data_str.split(','):
+                parts = ch_data.split(':')
+                if len(parts) == 2:
+                    ch_name = parts[0]
+                    pwm_value = int(parts[1])
+                    ch_num = int(ch_name[2:])
+                    channels[ch_num] = pwm_value
+            
+            return channels if channels else None
+        except:
+            return None
+    
+    def _update_monitor_data(self, channels):
+        """Update stored channel data for live plotting."""
+        elapsed_s = time.time() - self._monitor_start_time
+        
+        for ch_num, pwm_value in channels.items():
+            if ch_num not in self._channel_data:
+                self._channel_data[ch_num] = {'times': [], 'values': []}
+            
+            data = self._channel_data[ch_num]
+            data['times'].append(elapsed_s)
+            data['values'].append(pwm_value)
+            
+            # Limit data points
+            if len(data['times']) > self._max_live_points * 2:
+                data['times'] = data['times'][-self._max_live_points:]
+                data['values'] = data['values'][-self._max_live_points:]
+        
+        self._data_points_received += 1
+    
+    def _console_monitor(self):
+        """Fallback console-based monitoring when Dash is not available."""
+        if not self.ser:
+            print("❌ No serial connection available for monitoring")
+            return
+        
+        print("\n📊 Console Monitoring (Ctrl+C to stop)...")
+        print("   Install dash for graphical monitoring: pip install dash plotly\n")
+        
+        start_time = time.time()
+        last_print = 0
+        
+        try:
+            while True:
+                if self.ser.in_waiting > 0:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    
+                    if line.startswith('$CHMON:'):
+                        channels = self._parse_channel_monitor(line)
+                        if channels and time.time() - last_print > 0.5:
+                            elapsed = time.time() - start_time
+                            status = f"⏱️ {elapsed:6.1f}s | "
+                            for ch in sorted(channels.keys()):
+                                pwm = channels[ch]
+                                max_val = self._channel_max_values.get(ch, 255)
+                                bar_len = int(pwm / max_val * 10)
+                                bar = '█' * bar_len + '░' * (10 - bar_len)
+                                status += f"CH{ch}: {pwm:4d} [{bar}] | "
+                            print(status)
+                            last_print = time.time()
+                    elif not line.startswith('$') and line:
+                        print(f"  Arduino: {line}")
+                
+                time.sleep(0.01)
+        except KeyboardInterrupt:
+            print("\n⏹️  Monitoring stopped")
+    
+    def _print_monitor_summary(self):
+        """Print monitoring summary."""
+        print(f"\n📊 Monitoring Summary:")
+        print(f"   Data points received: {self._data_points_received}")
+        print(f"   Total duration: {time.time() - self._monitor_start_time:.1f}s")
+        print(f"   Channels monitored: {len(self._channel_data)}")
+    
     def close(self):
         """
         Close serial connection and cleanup.
@@ -938,19 +1527,64 @@ class LightControllerParser:
                 pass
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Light Controller Protocol Parser - Upload and monitor LED control protocols',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                                      # Interactive mode with file picker
+  %(prog)s protocol.txt                         # Run protocol file
+  %(prog)s protocol.txt --live-plot             # Run with real-time visualization
+  %(prog)s protocol.txt --port /dev/cu.usbmodem14301 --live-plot
+  %(prog)s protocol.txt -y                      # Auto-confirm prompts
+  %(prog)s --port COM3 --baud 115200            # Specify port and baud rate
+        """
+    )
+    
+    parser.add_argument('protocol', nargs='?', default=None,
+                        help='Protocol file (.txt or .xlsx). Opens file picker if not specified.')
+    parser.add_argument('--port', '-p', default=None,
+                        help='Serial port (auto-detect if not specified)')
+    parser.add_argument('--baud', '-b', type=int, default=9600,
+                        help='Baud rate (default: 9600)')
+    parser.add_argument('--live-plot', action='store_true',
+                        help='Enable real-time live plotting after uploading protocol')
+    parser.add_argument('--refresh-rate', type=int, default=100,
+                        help='Live plot refresh rate in ms (default: 100)')
+    parser.add_argument('--no-monitor', action='store_true',
+                        help='Skip monitoring after upload (just upload and exit)')
+    parser.add_argument('--skip-check', action='store_true',
+                        help='Skip memory and pulse mode compatibility checks (use when Arduino is stuck/unresponsive)')
+    parser.add_argument('-y', '--yes', action='store_true',
+                        help='Auto-confirm all prompts (non-interactive mode)')
+    
+    return parser.parse_args()
+
+
 def main():
     """
-    Main function demonstrating usage of LightControllerParser class.
-    This replaces the complex main code in protocol_parser.py.
+    Main function with command-line argument support.
+    Supports --live-plot for real-time visualization after uploading protocol.
     """
-    import tkinter as tk
-    from tkinter import filedialog
+    args = parse_args()
+    
+    # Set auto-confirm mode via environment variable if -y/--yes is specified
+    if args.yes:
+        os.environ['LIGHT_CONTROLLER_AUTO_CONFIRM'] = '1'
     
     print('Welcome to use the light controller!')
     
-    try:
-        # Select protocol file
+    # Determine protocol file
+    protocol_file = args.protocol
+    if not protocol_file:
+        import tkinter as tk
+        from tkinter import filedialog
+        
         print('Please select your protocol file...')
+        root = tk.Tk()
+        root.withdraw()
         protocol_file = filedialog.askopenfilename(
             title='Select the protocol file',
             filetypes=[('Protocol files', '*.xlsx *.txt'), ('Excel files', '*.xlsx'), ('Text files', '*.txt')]
@@ -959,17 +1593,74 @@ def main():
         if not protocol_file:
             print('No file selected. Exiting.')
             return
+    
+    try:
+        # Create parser instance
+        parser = LightControllerParser(protocol_file)
         
-        # Create parser instance (using context manager for automatic cleanup)
-        with LightControllerParser(protocol_file) as parser:
-            # Setup serial connection
-            if not parser.setup_serial(board_type='Arduino', baudrate=9600):
-                raise ValueError('Serial port is not available.')
+        # Setup serial connection with optional port override and skip checks
+        if not parser.setup_serial(board_type='Arduino', baudrate=args.baud, 
+                                    port_override=args.port, skip_checks=args.skip_check):
+            raise ValueError('Serial port is not available.')
+        
+        # Parse and execute
+        commands_file = parser.parse_and_execute()
+        print(f'\nProtocol execution completed successfully!')
+        print(f'Commands saved to: {commands_file}')
+        
+        # Live monitoring after upload
+        if args.live_plot and not args.no_monitor:
+            print('\nStarting live monitor...')
+            parser.start_live_monitor(update_interval_ms=args.refresh_rate)
+        elif not args.no_monitor:
+            # Default: simple console monitoring until exit
+            print('\n📊 Monitoring channel values (Ctrl+C or close terminal to exit)...')
+            print('   Use --live-plot for graphical visualization')
+            print('   Use --no-monitor to skip monitoring\n')
             
-            # Parse and execute
-            commands_file = parser.parse_and_execute()
-            print(f'\nProtocol execution completed successfully!')
-            print(f'Commands saved to: {commands_file}')
+            # Initialize monitoring attributes
+            parser._monitor_start_time = time.time()
+            parser._channel_max_values = {}
+            if parser.arduino_config:
+                ch_max_list = parser.arduino_config.get('channel_max_values', [])
+                for i, max_val in enumerate(ch_max_list, 1):
+                    parser._channel_max_values[i] = max_val
+            
+            try:
+                last_print = 0
+                while True:
+                    if parser.ser and parser.ser.in_waiting > 0:
+                        line = parser.ser.readline().decode('utf-8', errors='ignore').strip()
+                        
+                        if line.startswith('$CHMON:'):
+                            channels = parser._parse_channel_monitor(line)
+                            if channels and time.time() - last_print > 0.3:
+                                elapsed = time.time() - parser._monitor_start_time
+                                status = f"⏱️ {elapsed:6.1f}s | "
+                                for ch in sorted(channels.keys()):
+                                    pwm = channels[ch]
+                                    max_val = parser._channel_max_values.get(ch, 255)
+                                    bar_len = int(pwm / max_val * 10)
+                                    bar = '█' * bar_len + '░' * (10 - bar_len)
+                                    status += f"CH{ch}: {pwm:4d} [{bar}] | "
+                                print(status)
+                                last_print = time.time()
+                        elif line == 'Arrivederci':
+                            print(f"  Arduino: {line}")
+                            print("\n✓ Protocol execution completed on Arduino")
+                            break
+                        elif not line.startswith('$') and line:
+                            print(f"  Arduino: {line}")
+                    
+                    time.sleep(0.01)
+            except KeyboardInterrupt:
+                print("\n⏹️  Monitoring stopped")
+        
+        # Cleanup
+        if parser.ser:
+            parser.ser.close()
+            parser.ser = None
+            print("✓ Serial connection closed")
             
     except Exception as e:
         import traceback

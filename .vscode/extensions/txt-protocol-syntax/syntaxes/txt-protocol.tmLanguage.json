@@ -40,7 +40,7 @@
       "patterns": [
         {
           "name": "keyword.control.txt-protocol",
-          "match": "\\b(PROTOCOL|TIME_UNIT|START_TIME|REPEAT|PULSE|WAIT_STATUS|WAIT_PULSE|COMMANDS)\\b"
+          "match": "\\b(PROTOCOL|TIME_UNIT|START_TIME|REPEAT|PULSE|WAIT_STATUS|WAIT_PULSE|LOOP|COMMANDS)\\b"
         }
       ]
     },

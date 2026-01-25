@@ -19,10 +19,14 @@ Complete installation instructions for Light Controller V2.3.
 
 ### Required Hardware
 
-- **Arduino Board**: Uno, Due, Mega, or compatible
-- **USB Cable**: Type-A to Type-B (Uno/Mega) or Micro-USB (Due)
-- **LEDs**: Compatible with your Arduino (3.3V or 5V depending on board)
-- **Resistors**: 220Ω - 1kΩ (current-limiting for LEDs)
+- **Arduino Board**: Uno R3/R4, Due, Mega, or compatible
+  - ⚠️ **Arduino Due operates at 3.3V** - LEDs and peripherals must be 3.3V compatible!
+  - Uno R3/R4 and Mega operate at 5V
+- **USB Cable**: Type-B (Uno R3/Mega), USB-C (Uno R4), or Micro-USB (Due)
+- **LEDs**: 3.3V compatible for Due, 5V for Uno/Mega
+- **Resistors**: 
+  - For 5V boards: 220Ω - 1kΩ
+  - For 3.3V boards (Due): 100Ω - 220Ω
 - **Computer**: Windows, macOS, or Linux
 
 ### Required Software
@@ -76,6 +80,11 @@ python setup.py develop
 ---
 
 ## Arduino Setup
+
+> ⚠️ **Important Voltage Information:**
+> - **Arduino Due:** 3.3V logic - do NOT connect 5V peripherals directly!
+> - **Arduino Uno R3/R4/Mega:** 5V logic - standard LED resistors work
+> - See [Arduino Setup Guide](ARDUINO_SETUP.md) for detailed board-specific instructions
 
 ### Step 1: Open Arduino Sketch
 

@@ -1,0 +1,70 @@
+# Mixed Channel Types Demo
+# ========================
+# Demonstrates using different output types on different channels:
+# - CH1, CH2: PWM (8-bit, 0-255)
+# - CH3, CH4: MCP4728 DAC (12-bit, 0-4095)
+#
+# Arduino Configuration (using virtual pins):
+#   const int channelPins[4] = {11, 12, 201, 202};
+#   Types auto-detected: pins 11,12 = PWM, pins 201,202 = MCP4728
+#
+# Virtual Pin System:
+#   0-99:    PWM pins (use Arduino pin numbers)
+#   100-101: Native DAC (100=DAC0, 101=DAC1)
+#   201-204: MCP4728 channels A-D
+#
+# Value handling rules (NO AUTO-SCALING):
+#   - 0.0-1.0 (normalized): Scaled to channel max (255 or 4095)
+#   - 0-255 on PWM: Used directly
+#   - 0-255 on DAC: Used directly (WARNING: low resolution)
+#   - 256-4095 on PWM: CAPPED to 255 (with warning)
+#   - 256-4095 on DAC: Used directly
+
+# --- Pattern 1: Using normalized values (best practice for cross-channel) ---
+
+# CH1 (PWM): Fade 0.0→1.0 converts to 0→255
+PATTERN:1;CH:1;RAMP:(I:0.0,1.0,5000);REPEATS:1
+
+# CH2 (PWM): Fade 1.0→0.0 converts to 255→0
+PATTERN:1;CH:2;RAMP:(O:1.0,0.0,5000);REPEATS:1
+
+# CH3 (MCP4728): Fade 0.0→1.0 converts to 0→4095
+PATTERN:1;CH:3;RAMP:(I:0.0,1.0,5000);REPEATS:1
+
+# CH4 (MCP4728): Fade 1.0→0.0 converts to 4095→0
+PATTERN:1;CH:4;RAMP:(O:1.0,0.0,5000);REPEATS:1
+
+# --- Pattern 2: Using 8-bit values ---
+
+# CH1 (PWM): Direct 8-bit values - no conversion needed
+PATTERN:2;CH:1;RAMP:(C:0,255,3000),(L:255,255,1000),(C:255,0,3000);REPEATS:2
+
+# CH2 (PWM): Mid-range 8-bit value
+PATTERN:2;CH:2;RAMP:(C:0,127,3000),(L:127,127,1000),(C:127,0,3000);REPEATS:2
+
+# CH3 (MCP4728): 8-bit values on 12-bit channel - WARNING (low resolution)
+# The value stays 255, not scaled to 4095 - use 0.0-1.0 or full 12-bit values!
+PATTERN:2;CH:3;RAMP:(C:0,255,3000),(L:255,255,1000),(C:255,0,3000);REPEATS:2
+
+# CH4 (MCP4728): Better approach - use normalized values for 12-bit
+PATTERN:2;CH:4;RAMP:(C:0.0,0.5,3000),(L:0.5,0.5,1000),(C:0.5,0.0,3000);REPEATS:2
+
+# --- Pattern 3: Using 12-bit values ---
+
+# CH1 (PWM): 12-bit values CAPPED to 255 (with warning)
+# 4095→255, 2048→255 (capped!) - Use 8-bit values for PWM channels!
+PATTERN:3;CH:1;RAMP:(L:0,255,2000),(L:255,128,2000),(L:128,0,2000);REPEATS:1
+
+# CH2 (PWM): Proper 8-bit values for PWM
+PATTERN:3;CH:2;RAMP:(L:0,128,2000),(L:128,255,2000),(L:255,0,2000);REPEATS:1
+
+# CH3 (MCP4728): Direct 12-bit values (native resolution) - optimal!
+PATTERN:3;CH:3;RAMP:(L:0,4095,2000),(L:4095,2048,2000),(L:2048,0,2000);REPEATS:1
+
+# CH4 (MCP4728): Direct 12-bit values - full resolution
+PATTERN:3;CH:4;RAMP:(L:0,2048,2000),(L:2048,4095,2000),(L:4095,0,2000);REPEATS:1
+
+# Total duration: Pattern 1 (5s) + Pattern 2 (14s x 2 = 28s) + Pattern 3 (6s) = 39s
+# Start all channels immediately
+START_TIME: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}
+WAIT_STATUS: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}

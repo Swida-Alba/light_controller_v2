@@ -2,7 +2,7 @@
 
 ## Overview
 
-Light Controller v2.2.1 introduces **PWM intensity control** and **gradient/ramp transitions** for smooth light intensity modulation. This enables:
+Light Controller v2.3 introduces **PWM intensity control**, **gradient/ramp transitions**, and **DAC output support** for smooth light intensity modulation. This enables:
 
 - **Continuous intensity**: Values from 0% (OFF) to 100% (full brightness)
 - **Smooth transitions**: Gradual ramps between intensity levels
@@ -10,11 +10,41 @@ Light Controller v2.2.1 introduces **PWM intensity control** and **gradient/ramp
 - **Multi-segment ramps**: Combine multiple transitions in one pattern
 - **Memory efficient**: Single RAMP command replaces hundreds of individual steps
 - **Interactive visualization**: See easing curves in Jupyter notebook
+- **DAC support**: True analog output via native DAC or MCP4728 I2C DAC (v2.3+)
 
 > 📖 **Related Documentation**:
 > - [Protocol Syntax Reference](PROTOCOL_SYNTAX_REFERENCE.md) - Detailed punctuation & format rules
 > - [F Mode Custom Functions](F_MODE_CUSTOM_FUNCTIONS.md) - Custom function implementation
 > - [Easing Curves Notebook](easing_curves_visualization.ipynb) - Interactive visualization
+> - [Arduino Setup](ARDUINO_SETUP.md) - MCP4728 DAC wiring and installation
+
+---
+
+## Output Types
+
+### PWM vs DAC Output
+
+Light Controller v2.3 supports three output modes:
+
+| Output Type    | Pin Range | Resolution      | Signal Type | Use Case                |
+| -------------- | --------- | --------------- | ----------- | ----------------------- |
+| **PWM**        | 0-99      | 8-bit (0-255)   | Pulsed      | LEDs, most applications |
+| **Native DAC** | 100-101   | 12-bit (0-4095) | True analog | Due, Zero, R4 boards    |
+| **MCP4728**    | 201-204   | 12-bit (0-4095) | True analog | I2C DAC module          |
+
+### Normalized Values (0.0 - 1.0)
+
+All protocols use **normalized values** (0.0 to 1.0) for portability:
+
+| Protocol Value | Meaning     | PWM (8-bit) | DAC (12-bit) |
+| -------------- | ----------- | ----------- | ------------ |
+| `0.0`          | OFF (0%)    | 0           | 0            |
+| `0.5`          | Half (50%)  | 127         | 2047         |
+| `1.0`          | Full (100%) | 255         | 4095         |
+
+The conversion to actual hardware values happens automatically:
+- Python converts 0.0-1.0 → 0-255 (byte)
+- Arduino scales to 0-4095 for 12-bit DAC outputs
 
 ---
 
@@ -24,12 +54,12 @@ Light Controller v2.2.1 introduces **PWM intensity control** and **gradient/ramp
 
 In protocol files, specify intensity as a **decimal between 0.0 and 1.0**:
 
-| Value | Meaning | Arduino PWM |
-|-------|---------|-------------|
-| `0.0` | OFF (0%) | 0 |
-| `0.5` | Half brightness (50%) | 127 |
-| `1.0` | Full brightness (100%) | 255 |
-| `0.25` | Quarter brightness (25%) | 63 |
+| Value  | Meaning                  | Arduino PWM |
+| ------ | ------------------------ | ----------- |
+| `0.0`  | OFF (0%)                 | 0           |
+| `0.5`  | Half brightness (50%)    | 127         |
+| `1.0`  | Full brightness (100%)   | 255         |
+| `0.25` | Quarter brightness (25%) | 63          |
 
 ### Automatic Conversion
 
@@ -44,7 +74,7 @@ The Python parser automatically converts:
 ### Basic PWM Status (Excel)
 
 | Sections | CH1_status | CH1_time_sec |
-|----------|------------|--------------|
+| -------- | ---------- | ------------ |
 | 0        | 0.0        | 5            |
 | 1        | 0.5        | 10           |
 | 2        | 1.0        | 10           |
@@ -85,30 +115,36 @@ RAMP:(MODE:start,end,duration[|t_start,t_end]),(MODE:...);
 ```
 
 **Parameters for L/C/I/O Modes:**
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `MODE` | Easing mode (L/C/I/O) | I |
-| `start` | Starting PWM value (0-255) | 0 |
-| `end` | Ending PWM value (0-255) | 255 |
-| `duration` | Transition time in ms | 10000 |
+| Parameter  | Description                      | PWM Example | DAC Example |
+| ---------- | -------------------------------- | ----------- | ----------- |
+| `MODE`     | Easing mode (L/C/I/O)            | I           | I           |
+| `start`    | Starting value (0-255 or 0-4095) | 0           | 0           |
+| `end`      | Ending value (0-255 or 0-4095)   | 255         | 4095        |
+| `duration` | Transition time in ms            | 10000       | 10000       |
+
+**Note:** Values auto-scale based on pin type:
+- PWM pins (0-99): Use 0-255 values
+- Native DAC pins (100-101): Use 0-4095 values
+- MCP4728 DAC pins (201-204): Use 0-4095 values
 
 **Parameters for X Mode (different format!):**
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `duration` | Transition time in ms | 5000 |
-| `t_start` | Start of t range (0-2) | 0 |
-| `t_end` | End of t range (0-2) | 1 |
+| Parameter  | Description            | Example |
+| ---------- | ---------------------- | ------- |
+| `duration` | Transition time in ms  | 5000    |
+| `t_start`  | Start of t range (0-2) | 0       |
+| `t_end`    | End of t range (0-2)   | 1       |
 
 **Parameters for F Mode (custom functions):**
-| Parameter | Description | Example |
-|-----------|-------------|---------|
+| Parameter   | Description             | Example   |
+| ----------- | ----------------------- | --------- |
 | `func_name` | Name of custom function | heartbeat |
-| `duration` | Transition time in ms | 2000 |
+| `duration`  | Transition time in ms   | 2000      |
 
 **Note:** Arduino performs smooth interpolation on-the-fly - no step count needed!
 
 **Examples:**
 ```txt
+# PWM channels (0-255)
 # Linear ramp over 5 seconds (L mode)
 RAMP:(L:0,255,5000);
 
@@ -118,18 +154,31 @@ RAMP:(I:0,255,3000);
 # Ease-in 50→200 range (same curve shape, different PWM output)
 RAMP:(I:50,200,3000);
 
+# DAC channels (0-4095) - MCP4728 or native DAC
+# Linear ramp 0→4095 over 5 seconds
+RAMP:(L:0,4095,5000);
+
+# Ease-in over 3 seconds (full range)
+RAMP:(I:0,4095,3000);
+
+# Sub-range: ramp between 2000-2500 (useful for fine control)
+RAMP:(L:2000,2500,5000);
+
 # X mode: raw cosine curve (NO PWM values - t range determines output!)
-RAMP:(X:5000|0,1);      # 5 seconds, PWM: 0→255
-RAMP:(X:5000|1,2);      # 5 seconds, PWM: 255→0
-RAMP:(X:10000|0,2);     # 10 seconds breathing: 0→255→0
+RAMP:(X:5000|0,1);      # 5 seconds, Output: 0→max
+RAMP:(X:5000|1,2);      # 5 seconds, Output: max→0
+RAMP:(X:10000|0,2);     # 10 seconds breathing: 0→max→0
 
 # Custom function (F mode) - see F_MODE_CUSTOM_FUNCTIONS.md for details
 RAMP:(F:heartbeat,2000);
 RAMP:(F:bounce,3000);
 RAMP:(F:sine_wave,5000);
 
-# Multi-segment breathing
+# Multi-segment breathing (PWM)
 RAMP:(I:0,255,2000),(L:255,255,1000),(O:255,0,2000);
+
+# Multi-segment breathing (DAC)
+RAMP:(I:0,4095,2000),(L:4095,4095,1000),(O:4095,0,2000);
 ```
 
 📖 **[F Mode Custom Functions Guide](F_MODE_CUSTOM_FUNCTIONS.md)** - Complete custom function documentation
@@ -171,14 +220,14 @@ Where **t ∈ [0, 2]** produces a full cycle:
 
 The t parameter determines the portion of the cosine curve used:
 
-| Mode | Code | t Range (ascending) | t Range (descending) | Description |
-|------|------|---------------------|----------------------|-------------|
-| **Linear** | `L` | N/A | N/A | Constant speed |
-| **Cosine** | `C` | [0, 1] | [1, 2] | Full S-curve, **PWM scaled** |
-| **Ease-In** | `I` | [0, 0.5] | [1, 1.5] | Slow start, **PWM scaled** |
-| **Ease-Out** | `O` | [0.5, 1] | [1.5, 2] | Fast start, **PWM scaled** |
-| **Custom** | `X` | [t_start, t_end] | any range | **Raw 255*f(t), NO scaling** |
-| **Function** | `F` | N/A | N/A | Custom function, raw output |
+| Mode         | Code | t Range (ascending) | t Range (descending) | Description                  |
+| ------------ | ---- | ------------------- | -------------------- | ---------------------------- |
+| **Linear**   | `L`  | N/A                 | N/A                  | Constant speed               |
+| **Cosine**   | `C`  | [0, 1]              | [1, 2]               | Full S-curve, **PWM scaled** |
+| **Ease-In**  | `I`  | [0, 0.5]            | [1, 1.5]             | Slow start, **PWM scaled**   |
+| **Ease-Out** | `O`  | [0.5, 1]            | [1.5, 2]             | Fast start, **PWM scaled**   |
+| **Custom**   | `X`  | [t_start, t_end]    | any range            | **Raw 255*f(t), NO scaling** |
+| **Function** | `F`  | N/A                 | N/A                  | Custom function, raw output  |
 
 ### ⚠️ Important: X Mode Behavior
 
@@ -209,15 +258,15 @@ RAMP:(I:50,200,5000)
 
 ### Custom t Range Examples (X Mode)
 
-| t Range | f(t) Range | PWM Output | Use Case |
-|---------|------------|------------|----------|
-| [0, 0.5] | 0 → 0.5 | 0 → 127.5 | Half fade-in |
-| [0.5, 1] | 0.5 → 1 | 127.5 → 255 | Half fade-in (second half) |
-| [0, 1] | 0 → 1 | 0 → 255 | Full fade-in |
-| [1, 1.5] | 1 → 0.5 | 255 → 127.5 | Half fade-out |
-| [1.5, 2] | 0.5 → 0 | 127.5 → 0 | Half fade-out (second half) |
-| [1, 2] | 1 → 0 | 255 → 0 | Full fade-out |
-| [0, 2] | 0 → 1 → 0 | 0 → 255 → 0 | Breathing effect |
+| t Range  | f(t) Range | PWM Output  | Use Case                    |
+| -------- | ---------- | ----------- | --------------------------- |
+| [0, 0.5] | 0 → 0.5    | 0 → 127.5   | Half fade-in                |
+| [0.5, 1] | 0.5 → 1    | 127.5 → 255 | Half fade-in (second half)  |
+| [0, 1]   | 0 → 1      | 0 → 255     | Full fade-in                |
+| [1, 1.5] | 1 → 0.5    | 255 → 127.5 | Half fade-out               |
+| [1.5, 2] | 0.5 → 0    | 127.5 → 0   | Half fade-out (second half) |
+| [1, 2]   | 1 → 0      | 255 → 0     | Full fade-out               |
+| [0, 2]   | 0 → 1 → 0  | 0 → 255 → 0 | Breathing effect            |
 
 ### Visual Representation
 
@@ -479,11 +528,11 @@ PATTERN:1;CH:1;RAMP:(I:0,128,1000),(L:128,255,5000),(L:255,255,3000),(O:255,0,20
 
 ### Multi-Channel Gradient (Excel)
 
-| Sections | CH1_status | CH1_time_sec | CH1_ramp | CH2_status | CH2_time_sec |
-|----------|------------|--------------|----------|------------|--------------|
-| 0        | ramp       | 10           | 0.0→1.0,100,C | 0.0     | 10           |
-| 1        | 1.0        | 10           |          | ramp       | 10           |
-| 2        | ramp       | 10           | 1.0→0.0,100,C | 1.0     | 10           |
+| Sections | CH1_status | CH1_time_sec | CH1_ramp      | CH2_status | CH2_time_sec |
+| -------- | ---------- | ------------ | ------------- | ---------- | ------------ |
+| 0        | ramp       | 10           | 0.0→1.0,100,C | 0.0        | 10           |
+| 1        | 1.0        | 10           |               | ramp       | 10           |
+| 2        | ramp       | 10           | 1.0→0.0,100,C | 1.0        | 10           |
 
 ---
 
@@ -499,14 +548,37 @@ Features:
 - Interactive zoom and pan
 - Shows PWM value (0-255) over time
 - Displays all easing curves correctly
-- Supports both RAMP and PWM status patterns
+- Supports both RAMP and STATUS patterns
 - Per-channel intensity plots
+
+---
+
+## STATUS vs RAMP Behavior
+
+Understanding the difference between STATUS and RAMP is crucial for precise PWM control:
+
+| Feature           | STATUS                               | RAMP                       |
+| ----------------- | ------------------------------------ | -------------------------- |
+| **Purpose**       | Simple ON/OFF control                | Smooth PWM transitions     |
+| **Values**        | Binary: 0=OFF, any non-zero=ON (255) | Actual PWM: 0-255          |
+| **Visualization** | Shown as 0 or 255                    | Shown as actual PWM values |
+| **Use Case**      | Blinking, pulsing patterns           | Breathing, fading, dimming |
+
+**Example - Constant 50% Brightness:**
+```txt
+# ❌ WRONG: STATUS:128 will be treated as ON (255), not 50%
+PATTERN:1;CH:1;STATUS:128;TIME_MS:5000;REPEATS:1
+
+# ✅ CORRECT: Use RAMP with constant level
+PATTERN:1;CH:1;RAMP:(L:128,128,5000);REPEATS:1
+```
 
 ---
 
 ## Backward Compatibility
 
 - **Binary status (0/1)**: Still supported, mapped to 0/255
+- **Intermediate status (1-254)**: Treated as ON (255) for visualization
 - **Existing protocols**: Work unchanged
 - **PULSE mode**: Compatible with PWM (pulses at specified intensity)
 - **Legacy RAMP format**: `RAMP:start,end,duration,steps,mode` still supported

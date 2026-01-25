@@ -195,6 +195,21 @@ python protocol_visualizer.py training_example.txt --format html
 
 ## Understanding the Visualization
 
+### Value Range Support
+
+The visualization automatically detects and displays different output types:
+
+| Output Type | Value Range | Display       | Description                      |
+| ----------- | ----------- | ------------- | -------------------------------- |
+| **Binary**  | 0-1         | ON/OFF bars   | Digital on/off only              |
+| **PWM**     | 0-255       | Gradient fill | 8-bit PWM intensity              |
+| **DAC**     | 0-4095      | Gradient fill | 12-bit DAC (MCP4728, native DAC) |
+
+**Dynamic Y-axis:**
+- Intensity plots auto-scale to fit actual data values
+- Works with sub-ranges (e.g., DAC using only 2000-2500)
+- Y-axis label indicates detected value range
+
 ### Timeline Segments
 
 Each colored/shaded segment represents a state:

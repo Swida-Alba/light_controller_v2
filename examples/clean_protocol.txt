@@ -26,3 +26,6 @@ WAIT_STATUS: {'CH1': 1, 'CH2': 0, 'CH3': 1, 'CH4': 0}
 # Wait pulse for CH1 (optional)
 WAIT_PULSE: {'CH1': {'period': 2000, 'pw': 100}}
 
+# Loop settings (optional, default: 0 = stop after completion)
+LOOP: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}
+

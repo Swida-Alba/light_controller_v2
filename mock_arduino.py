@@ -40,13 +40,72 @@ except ImportError:
 # PWM UTILITIES
 # =============================================================================
 
-def clip_pwm(value: float) -> int:
-    """Clip PWM value to valid range [0, 255]"""
+# Channel output type constants
+OUTPUT_TYPE_PWM = 'P'       # 8-bit PWM (0-255)
+OUTPUT_TYPE_DAC = 'D'       # 12-bit Native DAC (0-4095)
+OUTPUT_TYPE_MCP4728 = 'M'   # 12-bit MCP4728 DAC (0-4095)
+OUTPUT_TYPE_BINARY = 'B'    # Binary (0 or 1)
+
+# Resolution constants
+RESOLUTION_BINARY = 1
+RESOLUTION_8BIT = 255
+RESOLUTION_12BIT = 4095
+
+# Virtual pin constants (matching Arduino)
+NATIVE_DAC_PIN_BASE = 100   # 100=DAC0, 101=DAC1
+MCP4728_PIN_BASE = 201      # 201-204 = MCP4728 channels A-D
+
+
+def detect_pin_type(pin: int) -> str:
+    """
+    Auto-detect channel type from virtual pin number.
+    Matches Arduino behavior:
+      - 0-99: PWM ('P')
+      - 100-101: Native DAC ('D')
+      - 201-204: MCP4728 ('M')
+    """
+    if MCP4728_PIN_BASE <= pin <= MCP4728_PIN_BASE + 3:
+        return OUTPUT_TYPE_MCP4728
+    if NATIVE_DAC_PIN_BASE <= pin <= NATIVE_DAC_PIN_BASE + 1:
+        return OUTPUT_TYPE_DAC
+    return OUTPUT_TYPE_PWM
+
+
+def get_channel_types_from_pins(pins: list) -> str:
+    """
+    Get channel types string from a list of virtual pin numbers.
+    
+    Args:
+        pins: List of virtual pin numbers (e.g., [11, 12, 201, 202])
+        
+    Returns:
+        String of channel types (e.g., "PPMM")
+    """
+    return ''.join(detect_pin_type(p) for p in pins)
+
+
+def get_max_value_for_type(channel_type: str) -> int:
+    """Get maximum value for a channel type"""
+    return {
+        OUTPUT_TYPE_BINARY: RESOLUTION_BINARY,
+        OUTPUT_TYPE_PWM: RESOLUTION_8BIT,
+        OUTPUT_TYPE_DAC: RESOLUTION_12BIT,
+        OUTPUT_TYPE_MCP4728: RESOLUTION_12BIT,
+    }.get(channel_type, RESOLUTION_8BIT)
+
+
+def clip_value(value: float, max_val: int = 255) -> int:
+    """Clip value to valid range [0, max_val]"""
     if value < 0:
         return 0
-    elif value > 255:
-        return 255
+    elif value > max_val:
+        return max_val
     return int(round(value))
+
+
+def clip_pwm(value: float) -> int:
+    """Clip PWM value to valid range [0, 255] (backward compatible)"""
+    return clip_value(value, 255)
 
 
 # =============================================================================
@@ -375,7 +434,7 @@ class ProtocolParser:
         ramp_matches = re.finditer(r'RAMP:([^;]+)', line)
         for match in ramp_matches:
             ramp_str = match.group(1)
-            ramp_sections = self._parse_ramp(ramp_str, line_num)
+            ramp_sections = self._parse_ramp(ramp_str, line_num, channel)
             sections.extend(ramp_sections)
         
         # Parse STATUS/TIME_MS pairs (only if no RAMP)
@@ -384,13 +443,25 @@ class ProtocolParser:
             time_match = re.search(r'TIME_MS:([^;]+)', line)
             
             if status_match and time_match:
-                statuses = [int(x.strip()) for x in status_match.group(1).split(',')]
+                status_strs = [x.strip() for x in status_match.group(1).split(',')]
                 times = [int(x.strip()) for x in time_match.group(1).split(',')]
                 
-                # Validate PWM values
-                for pwm in statuses:
-                    if pwm < 0 or pwm > 255:
-                        self._add_warning(f"Line {line_num}: PWM value {pwm} outside [0,255], will be clipped")
+                # Parse status values (can be int or normalized float)
+                statuses = []
+                for s in status_strs:
+                    if '.' in s:
+                        val = float(s)
+                        if 0 <= val <= 1.0:
+                            statuses.append(int(val * 255))
+                        else:
+                            statuses.append(int(val))
+                    else:
+                        val = int(s)
+                        # Scale 12-bit to 8-bit for simulation
+                        if val > 255:
+                            statuses.append(int((val / 4095) * 255))
+                        else:
+                            statuses.append(val)
                 
                 for pwm, duration in zip(statuses, times):
                     sections.append(PatternSection(pwm=clip_pwm(pwm), duration_ms=duration))
@@ -476,16 +547,17 @@ class ProtocolParser:
         
         return t_start, t_end
     
-    def _parse_ramp(self, ramp_str: str, line_num: int = 0) -> List[PatternSection]:
+    def _parse_ramp(self, ramp_str: str, line_num: int = 0, channel: int = 0) -> List[PatternSection]:
         """Parse RAMP command into sections with validation"""
         sections = []
         
         # New format for L, C, I, O modes: (MODE:start,end,duration)
+        # Values can be integers (0-255, 0-4095) or floats (0.0-1.0 normalized)
         # X mode format: (X:duration|t_start,t_end) - NO PWM values!
         # F mode format: (F:func_name,duration)
         
-        # Pattern for L, C, I, O modes: (MODE:start,end,duration)
-        lciox_format = re.findall(r'\(([LCIO]):(\d+),(\d+),(\d+)\)', ramp_str)
+        # Pattern for L, C, I, O modes: (MODE:start,end,duration) - supports int and float values
+        lciox_format = re.findall(r'\(([LCIO]):([0-9.]+),([0-9.]+),(\d+)\)', ramp_str)
         
         # Pattern for X mode: (X:duration|t_start,t_end)
         x_format = re.findall(r'\(X:(\d+)\|([0-9.]+),([0-9.]+)\)', ramp_str)
@@ -496,9 +568,39 @@ class ProtocolParser:
         if lciox_format:
             for match in lciox_format:
                 mode = match[0]
-                start_pwm = int(match[1])
-                end_pwm = int(match[2])
+                start_str = match[1]
+                end_str = match[2]
                 duration = int(match[3])
+                
+                # Parse values - could be normalized (0.0-1.0) or integer
+                # For now, assume 255 max for PWM simulation (will be scaled at output)
+                if '.' in start_str:
+                    start_val = float(start_str)
+                    if 0 <= start_val <= 1.0:
+                        start_pwm = int(start_val * 255)
+                    else:
+                        start_pwm = int(start_val)
+                else:
+                    start_val = int(start_str)
+                    # If value > 255, scale down for simulation (12-bit -> 8-bit)
+                    if start_val > 255:
+                        start_pwm = int((start_val / 4095) * 255)
+                    else:
+                        start_pwm = start_val
+                
+                if '.' in end_str:
+                    end_val = float(end_str)
+                    if 0 <= end_val <= 1.0:
+                        end_pwm = int(end_val * 255)
+                    else:
+                        end_pwm = int(end_val)
+                else:
+                    end_val = int(end_str)
+                    # If value > 255, scale down for simulation (12-bit -> 8-bit)
+                    if end_val > 255:
+                        end_pwm = int((end_val / 4095) * 255)
+                    else:
+                        end_pwm = end_val
                 
                 # Determine t range based on direction
                 is_descending = end_pwm < start_pwm
@@ -508,8 +610,11 @@ class ProtocolParser:
                 else:
                     t_start, t_end = self.MODE_T_RANGES[mode]
                 
-                # Scrutinize the ramp parameters
-                t_start, t_end = self._scrutinize_ramp(mode, start_pwm, end_pwm, t_start, t_end, line_num)
+                # Scrutinize the ramp parameters (skip for valid 12-bit or normalized values)
+                if not ('.' in start_str or start_val <= 255) or not ('.' in end_str or end_val <= 255):
+                    pass  # 12-bit values - don't warn
+                else:
+                    t_start, t_end = self._scrutinize_ramp(mode, start_pwm, end_pwm, t_start, t_end, line_num)
                 
                 segment = RampSegment(
                     start_pwm=clip_pwm(start_pwm),
@@ -626,22 +731,107 @@ class ProtocolParser:
 # =============================================================================
 
 class MockArduino:
-    """Simulates Arduino PWM control and channel monitoring"""
+    """Simulates Arduino PWM/DAC control and channel monitoring"""
     
     def __init__(self, time_step_ms: int = 10, max_channels: int = 8, 
-                 custom_functions: Optional[CustomFunctionLoader] = None):
+                 custom_functions: Optional[CustomFunctionLoader] = None,
+                 channel_types: str = None,
+                 channel_pins: list = None):
+        """
+        Initialize mock Arduino simulator.
+        
+        Args:
+            time_step_ms: Simulation time step in milliseconds
+            max_channels: Maximum number of channels
+            custom_functions: Custom easing function loader
+            channel_types: String of channel types (e.g., "PPMM" for 2 PWM + 2 MCP4728)
+                          If None and channel_pins provided, auto-detects from pins.
+                          If both None, defaults to all PWM ('P' * max_channels)
+            channel_pins: List of virtual pin numbers (e.g., [11, 12, 201, 202])
+                         If provided, channel_types is auto-detected from pins.
+        """
         self.time_step_ms = time_step_ms
         self.max_channels = max_channels
-        self.current_pwm = [0] * self.max_channels
+        self.custom_functions = custom_functions or CustomFunctionLoader()
+        
+        # Store channel pins (default to sequential PWM pins)
+        if channel_pins:
+            self.channel_pins = list(channel_pins)[:max_channels]
+            while len(self.channel_pins) < max_channels:
+                self.channel_pins.append(len(self.channel_pins))
+        else:
+            self.channel_pins = list(range(max_channels))
+        
+        # Set up channel types - prefer auto-detection from pins
+        if channel_pins:
+            # Auto-detect from virtual pins
+            self.channel_types = get_channel_types_from_pins(self.channel_pins)
+        elif channel_types:
+            self.channel_types = channel_types[:max_channels].ljust(max_channels, 'P')
+        else:
+            self.channel_types = 'P' * max_channels
+        
+        # Calculate max values per channel
+        self.channel_max_values = [
+            get_max_value_for_type(t) for t in self.channel_types
+        ]
+        
+        # Initialize state
+        self.current_values = [0] * self.max_channels  # Current output value per channel
         self.simulation_time_ms = 0
         self.data_log: List[Tuple[int, List[int]]] = []  # (time_ms, [ch1, ch2, ...])
-        self.custom_functions = custom_functions or CustomFunctionLoader()
+        
+        # Print configuration if verbose
+        print(f"MockArduino initialized:")
+        print(f"  Pins: {self.channel_pins}")
+        print(f"  Types: {self.channel_types} ({self._describe_types()})")
+        print(f"  Max values: {self.channel_max_values}")
+    
+    def _describe_types(self) -> str:
+        """Return human-readable channel type description"""
+        type_names = {
+            'P': 'PWM(8bit)',
+            'D': 'DAC(12bit)',
+            'M': 'MCP4728(12bit)',
+            'B': 'Binary'
+        }
+        return ', '.join(type_names.get(t, '?') for t in self.channel_types)
         
     def reset(self):
         """Reset simulator state"""
-        self.current_pwm = [0] * self.max_channels
+        self.current_values = [0] * self.max_channels
         self.simulation_time_ms = 0
         self.data_log = []
+    
+    def get_channel_type(self, channel: int) -> str:
+        """Get the type of a channel (1-indexed)"""
+        idx = channel - 1
+        if 0 <= idx < len(self.channel_types):
+            return self.channel_types[idx]
+        return 'P'  # Default to PWM
+    
+    def get_channel_max(self, channel: int) -> int:
+        """Get the maximum value for a channel (1-indexed)"""
+        idx = channel - 1
+        if 0 <= idx < len(self.channel_max_values):
+            return self.channel_max_values[idx]
+        return 255  # Default to 8-bit
+    
+    def set_channel_value(self, channel: int, value: int):
+        """Set a channel's output value, clipping to valid range"""
+        idx = channel - 1
+        if 0 <= idx < self.max_channels:
+            max_val = self.channel_max_values[idx]
+            self.current_values[idx] = clip_value(value, max_val)
+    
+    # Backward compatible property
+    @property
+    def current_pwm(self):
+        return self.current_values
+    
+    @current_pwm.setter
+    def current_pwm(self, value):
+        self.current_values = value
     
     def simulate_patterns(self, patterns: List[Pattern], 
                           realtime: bool = False, 
@@ -850,6 +1040,7 @@ Examples:
   python mock_arduino.py protocol.txt --realtime --speed 10
   python mock_arduino.py protocol.txt --save-plot simulation.html
   python mock_arduino.py protocol.txt --custom-funcs custom_easing.h
+  python mock_arduino.py protocol.txt --pins 201,202,203,13  # MCP4728 + PWM
         '''
     )
     
@@ -868,6 +1059,9 @@ Examples:
                         help='Suppress $CHMON output')
     parser.add_argument('--custom-funcs', metavar='HEADER',
                         help='Load custom functions from Arduino header file (e.g., custom_easing.h)')
+    parser.add_argument('--pins', metavar='PIN_LIST',
+                        help='Comma-separated virtual pin numbers (e.g., 201,202,203,13). '
+                             'Auto-detects channel types: 0-99=PWM, 100-101=DAC, 201-204=MCP4728')
     
     args = parser.parse_args()
     
@@ -897,7 +1091,21 @@ Examples:
         print(f"  Pattern {p.pattern_id}: CH{p.channel}, {len(p.sections)} sections, {p.repeats} repeats")
     
     # Create simulator with custom functions from parser
-    arduino = MockArduino(time_step_ms=args.step, custom_functions=parser_obj.custom_functions)
+    # Parse channel pins if provided
+    channel_pins = None
+    if args.pins:
+        try:
+            channel_pins = [int(p.strip()) for p in args.pins.split(',')]
+            print(f"Using virtual pins: {channel_pins}")
+        except ValueError:
+            print(f"Error: Invalid pin format '{args.pins}'. Use comma-separated integers.")
+            sys.exit(1)
+    
+    arduino = MockArduino(
+        time_step_ms=args.step, 
+        custom_functions=parser_obj.custom_functions,
+        channel_pins=channel_pins
+    )
     
     # Run simulation
     print("\nStarting simulation...")

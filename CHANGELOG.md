@@ -2,6 +2,84 @@
 
 All notable changes to the Light Controller v2.3 project.
 
+## [2.3.2] - 2026-01-24
+
+### Virtual Pin System Restored
+- **Virtual Pin Numbers**: Channel types auto-detected from pin numbers
+  - `0-99`: PWM pins (use Arduino digital pin numbers)
+  - `100-101`: Native DAC (100=DAC0, 101=DAC1 on Arduino Due)
+  - `201-204`: MCP4728 I2C DAC (201=CH_A, 202=CH_B, 203=CH_C, 204=CH_D)
+- **Auto-Detection**: `channelTypes[]` array populated automatically at startup based on pin numbers
+- **Simplified Configuration**: Only need to set `channelPins[]` - types determined automatically
+
+### Value Handling Rules (NO AUTO-SCALING)
+- **Normalized Values (0.0-1.0)**: Scaled to channel's max value (255 for PWM, 4095 for DAC)
+- **8-bit Values (0-255) on DAC**: Kept as-is with WARNING (low resolution)
+- **12-bit Values (256-4095) on PWM**: CAPPED to 255 with WARNING
+- **Values > 4095**: CAPPED to channel max with WARNING
+- **Decimal on Binary Channel**: ERROR (illegal - use 0 or 1 only)
+
+### Arduino Firmware Changes
+- **`detectPinType()`**: Auto-detect channel type from virtual pin number
+- **`isMCP4728Pin()` / `isNativeDACPin()`**: Helper functions for pin type checking
+- **`getMCP4728Channel()` / `getNativeDACIndex()`**: Convert virtual pins to hardware indices
+- **`parseChannelValue()`**: New validation function with proper warnings/errors
+- **Removed explicit `channelTypes[]` const**: Now auto-populated in setup()
+
+### Python Enhancements
+- **`convert_status_to_channel_value()`**: Updated to NOT scale between resolutions
+  - 8-bit values on 12-bit channels: WARNING (kept as-is)
+  - 12-bit values on 8-bit channels: CAPPED with WARNING
+  - Decimals on binary channels: ERROR
+- **`warnings` parameter**: Collects warning messages for later display
+- **Mock Arduino**: New `channel_pins` parameter for auto-detection of channel types
+
+### Example Updates
+- **mixed_channel_types.txt**: Updated comments to reflect no-scaling behavior
+- **dac_output_demo.txt**: Updated to use proper 12-bit values and normalized values
+
+### Hello Response Format
+Arduino greeting includes auto-detected configuration:
+```
+Salve;...;CH_PINS:11,12,201,202;CH_TYPES:PPMM;CH_MAX:255,255,4095,4095
+```
+
+---
+
+## [2.3.1] - 2026-01-24
+
+### Added - DAC Output Support
+- **MCP4728 I2C DAC**: 4-channel 12-bit DAC support (0-4095) via virtual pins 201-204
+- **Native DAC Support**: Arduino Due (DAC0/DAC1), Zero (DAC0), Uno R4 (DAC) via pins 100-101
+- **Automatic Scaling**: 8-bit internal values (0-255) auto-scale to 12-bit (0-4095) for DAC outputs
+- **Virtual Pin System**: Pin numbers 0-99 for PWM, 100-199 for native DAC, 201-204 for MCP4728
+
+### Added - Library Requirements
+- **Adafruit MCP4728 Library**: Required for MCP4728 DAC support
+- **Adafruit BusIO**: Dependency for I2C communication
+- **Wire.h**: Standard Arduino I2C library (included)
+
+### Arduino Firmware Changes
+- **`MCP4728_ENABLE`**: Compile-time flag to enable/disable MCP4728 support (default: enabled)
+- **`MCP4728_PIN_BASE`**: Virtual pin base for MCP4728 channels (default: 201)
+- **`HAS_NATIVE_DAC`**: Board-specific detection for native DAC support
+- **`setChannelOutput()`**: Unified function handles PWM, native DAC, and MCP4728 outputs
+- **`pwmTo12bit()`**: Converts 8-bit values to 12-bit for DAC output
+- **Hello Response**: Now includes MCP4728 status and DAC configuration
+
+### Documentation
+- **ARDUINO_SETUP.md**: New MCP4728 wiring, library installation, and troubleshooting sections
+- **PWM_RAMP_CONTROL.md**: Updated with output types table and DAC information
+- **examples/dac_output_demo.txt**: New example demonstrating MCP4728 usage
+
+### Design Notes
+- **Value Range**: Protocols continue using 0.0-1.0 normalized values (or legacy 0-255)
+- **Conversion Strategy**: Python converts 0.0-1.0 → 0-255; Arduino scales to 12-bit at output
+- **Memory Efficiency**: Internal storage remains byte (0-255) to minimize RAM usage
+- **Backward Compatible**: Existing protocols work without modification
+
+---
+
 ## [2.3.0] - 2025-12-26
 
 ### Hardware Testing
@@ -10,10 +88,19 @@ All notable changes to the Light Controller v2.3 project.
 - **$CHMON Integration**: Captured and validated PWM values during protocol execution
 - **Calibration Verified**: Arduino Due calibration factor 0.999949 (0.0051% timing accuracy)
 
+### Real-Time Monitoring Enhancements
+- **Matplotlib-Based Visualization**: Replaced PyQtGraph with matplotlib for cross-platform portability
+- **5-Minute Scrolling Window**: Real-time display shows moving 5-min window for protocols of any length
+- **Extended Data Storage**: Stores up to 1 hour of data (36,000 points at 10Hz) for complete export
+- **Plotly HTML Export**: Automatically saves interactive HTML chart with range slider when monitoring stops
+- **Flexible CLI**: `--monitor` flag can now appear anywhere in command line (position-independent)
+- **Dual Output Files**: Generates both `*_monitored.csv` and `*_monitored.html` on close
+
 ### Documentation
 - **Arduino Due Recommended**: Updated ARDUINO_SETUP.md to strongly recommend Arduino Due for PWM/RAMP mode
 - **Memory Requirements**: Documented that firmware uses ~12KB SRAM (Arduino Uno's 2KB insufficient)
 - **Quick Start Updated**: README.md now includes memory warnings and board recommendations
+- **Serial Monitor Guide Updated**: New features for 5-min window and Plotly HTML export
 - Archived 29 outdated documentation files (reduced from 61 to 32 active docs)
 - Created comprehensive doc archival system with README index
 - Reorganized examples/ folder with dedicated subfolders

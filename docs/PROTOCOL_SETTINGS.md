@@ -6,12 +6,125 @@ Complete guide to all protocol settings and parameters.
 
 ## Table of Contents
 
+- [Virtual Pin System](#virtual-pin-system)
+- [Channel Types and Value Handling](#channel-types-and-value-handling)
 - [Start Time Configuration](#start-time-configuration)
 - [Calibration Settings](#calibration-settings)
 - [Wait Status Control](#wait-status-control)
 - [Pulse Parameters](#pulse-parameters)
 - [Time Units](#time-units)
 - [Advanced Settings](#advanced-settings)
+
+---
+
+## Virtual Pin System
+
+### Overview
+
+The virtual pin system allows you to mix different output types (PWM, DAC, MCP4728) in a single protocol. Channel types are **auto-detected** from pin numbers.
+
+### Pin Number Ranges
+
+| Pin Range | Type       | Resolution | Description                   |
+| --------- | ---------- | ---------- | ----------------------------- |
+| 0-99      | PWM        | 8-bit      | Standard Arduino digital pins |
+| 100-101   | Native DAC | 12-bit     | Arduino Due/Zero/R4 DAC pins  |
+| 201-204   | MCP4728    | 12-bit     | External I2C DAC channels A-D |
+
+### Configuration Example
+
+```cpp
+// In Arduino sketch - types auto-detected from pin numbers!
+const int channelPins[MAX_CHANNEL_NUM] = {6, 8, 100, 201};
+// CH1: PWM pin 6 (8-bit)    - auto-detected as PWM
+// CH2: PWM pin 8 (8-bit)    - auto-detected as PWM
+// CH3: Native DAC0 (12-bit) - auto-detected as DAC
+// CH4: MCP4728 Ch A (12-bit) - auto-detected as MCP4728
+```
+
+### Supported Boards for Native DAC
+
+| Board          | Virtual Pin 100 | Virtual Pin 101 |
+| -------------- | --------------- | --------------- |
+| Arduino Due    | DAC0 (0-3.3V)   | DAC1 (0-3.3V)   |
+| Arduino Zero   | DAC0 (0-3.3V)   | Not available   |
+| Arduino Uno R4 | DAC (0-5V)      | Not available   |
+
+> ⚠️ **Arduino Due Voltage Warning:** The Due operates at 3.3V. Native DAC outputs 0-3.3V, not 0-5V!
+
+---
+
+## Channel Types and Value Handling
+
+### Overview
+
+Different channel types support different value ranges. The firmware handles conversions automatically, but understanding the rules helps avoid unexpected behavior.
+
+### Value Input Formats
+
+| Input Type               | Example       | PWM Output (8-bit) | DAC Output (12-bit) |
+| ------------------------ | ------------- | ------------------ | ------------------- |
+| **Normalized (0.0-1.0)** | `STATUS:0.5`  | 127                | 2047                |
+| **8-bit (0-255)**        | `STATUS:128`  | 128                | 128 ⚠️               |
+| **12-bit (0-4095)**      | `STATUS:2048` | Capped to 255 ⚠️    | 2048                |
+
+### Value Handling Rules (v2.3.2+)
+
+**1. Normalized Values (Recommended)**
+```txt
+STATUS:0.5    → PWM: 127, DAC: 2047 (auto-scaled)
+RAMP:(L:0.0,1.0,5000)  → Full range on any channel type
+```
+✅ **Best practice:** Use normalized 0.0-1.0 values for cross-platform compatibility.
+
+**2. Integer Values - NO Auto-Scaling**
+```txt
+# 8-bit value on PWM channel (correct)
+PATTERN:1;CH:1;STATUS:128;TIME_MS:1000  → Output: 128
+
+# 8-bit value on 12-bit DAC channel (warning)
+PATTERN:1;CH:3;STATUS:128;TIME_MS:1000  → Output: 128 (low resolution!)
+# ⚠️ WARNING: 8-bit value 128 on 12-bit channel - consider using 12-bit values
+
+# 12-bit value on 8-bit PWM channel (capped)
+PATTERN:1;CH:1;STATUS:2048;TIME_MS:1000  → Output: 255 (capped!)
+# ⚠️ WARNING: Value 2048 exceeds 8-bit max, capping to 255
+```
+
+**3. Decimal Values on Binary Channels (Error)**
+```txt
+# Binary channels only accept 0 or 1
+PATTERN:1;CH:5;STATUS:0.5;TIME_MS:1000  → ERROR!
+# ❌ ERROR: Decimal value 0.5 invalid for binary channel
+```
+
+### Resolution Recommendations
+
+| Channel Type | Recommended Values | Notes                       |
+| ------------ | ------------------ | --------------------------- |
+| PWM          | 0.0-1.0 or 0-255   | 8-bit resolution            |
+| Native DAC   | 0.0-1.0 or 0-4095  | 12-bit for full resolution  |
+| MCP4728      | 0.0-1.0 or 0-4095  | 12-bit for full resolution  |
+| Binary       | 0 or 1 only        | No decimals or intermediate |
+
+### Example Protocol with Mixed Types
+
+```txt
+# Mixed channel types demo
+# CH1: PWM pin 6 (8-bit)
+# CH2: Native DAC pin 100 (12-bit)
+# CH3: MCP4728 pin 201 (12-bit)
+
+# Using normalized values (works on all channel types)
+PATTERN:1;CH:1;RAMP:(L:0.0,1.0,5000);REPEATS:2
+PATTERN:1;CH:2;RAMP:(L:0.0,1.0,5000);REPEATS:2
+PATTERN:1;CH:3;RAMP:(L:0.0,1.0,5000);REPEATS:2
+
+# Using type-specific values
+PATTERN:2;CH:1;STATUS:0,128,255;TIME_MS:1000,1000,1000    # 8-bit for PWM
+PATTERN:2;CH:2;STATUS:0,2048,4095;TIME_MS:1000,1000,1000  # 12-bit for DAC
+PATTERN:2;CH:3;STATUS:0,2048,4095;TIME_MS:1000,1000,1000  # 12-bit for MCP4728
+```
 
 ---
 
@@ -23,11 +136,11 @@ Control when each channel begins execution with flexible scheduling.
 
 ### Format Support
 
-| Format | Example | Use Case |
-|--------|---------|----------|
-| Time only | `21:00` | Start today at specific time |
-| Full datetime | `2025-11-08 21:00:00` | Schedule future date/time |
-| Countdown | `120` | Start in N seconds |
+| Format        | Example               | Use Case                     |
+| ------------- | --------------------- | ---------------------------- |
+| Time only     | `21:00`               | Start today at specific time |
+| Full datetime | `2025-11-08 21:00:00` | Schedule future date/time    |
+| Countdown     | `120`                 | Start in N seconds           |
 
 ---
 
@@ -94,16 +207,16 @@ Control when each channel begins execution with flexible scheduling.
 #### Row Format (≤5 channels)
 
 ```
-| Channel    | CH1   | CH2      | CH3           |
-|------------|-------|----------|---------------|
-| start_time | 21:00 | 120      | 2025-11-09... |
+| Channel    | CH1   | CH2 | CH3           |
+| ---------- | ----- | --- | ------------- |
+| start_time | 21:00 | 120 | 2025-11-09... |
 ```
 
 #### Column Format (5+ channels)
 
 ```
-| Channels | Start_time          | 
-|----------|---------------------|
+| Channels | Start_time          |
+| -------- | ------------------- |
 | CH1      | 21:00               |
 | CH2      | 120                 |
 | CH3      | 2025-11-09 06:00:00 |
@@ -203,7 +316,7 @@ Create a sheet named `calibration`:
 
 ```
 | CALIBRATION_FACTOR |
-|--------------------|
+| ------------------ |
 | 1.00131            |
 ```
 
@@ -265,10 +378,10 @@ Controls LED behavior during countdown to start time.
 
 ### Values
 
-| Value | Behavior | Use Case |
-|-------|----------|----------|
-| `1` | LED ON during wait | Visual ready indicator |
-| `0` | LED OFF during wait | Dark mode before start |
+| Value | Behavior            | Use Case               |
+| ----- | ------------------- | ---------------------- |
+| `1`   | LED ON during wait  | Visual ready indicator |
+| `0`   | LED OFF during wait | Dark mode before start |
 
 ---
 
@@ -278,7 +391,7 @@ Controls LED behavior during countdown to start time.
 
 ```
 | Channel     | CH1 | CH2 | CH3 |
-|-------------|-----|-----|-----|
+| ----------- | --- | --- | --- |
 | start_time  | ... | ... | ... |
 | wait_status | 1   | 0   | 1   |
 ```
@@ -287,7 +400,7 @@ Controls LED behavior during countdown to start time.
 
 ```
 | Channels | Start_time | Wait_status |
-|----------|------------|-------------|
+| -------- | ---------- | ----------- |
 | CH1      | 21:00      | 1           |
 | CH2      | 21:00      | 0           |
 | CH3      | 21:15      | 1           |
@@ -369,12 +482,12 @@ Control LED pulsing (blinking/breathing) during ON states.
 
 Four valid combinations:
 
-| Combination | Parameters | Best For |
-|-------------|------------|----------|
-| 1 | Frequency + Pulse Width | Precise timing control |
-| 2 | Frequency + Duty Cycle | Percentage-based brightness |
-| 3 | Period + Pulse Width | Direct period control |
-| 4 | Period + Duty Cycle | Period + percentage |
+| Combination | Parameters              | Best For                    |
+| ----------- | ----------------------- | --------------------------- |
+| 1           | Frequency + Pulse Width | Precise timing control      |
+| 2           | Frequency + Duty Cycle  | Percentage-based brightness |
+| 3           | Period + Pulse Width    | Direct period control       |
+| 4           | Period + Duty Cycle     | Period + percentage         |
 
 ---
 
@@ -532,28 +645,28 @@ CH1_T_ms       → Values in milliseconds
 **Option 1: Frequency + Pulse Width**
 ```
 | CH1_status | CH1_time_ms | CH1_frequency | CH1_pulse_width |
-|------------|-------------|---------------|-----------------|
+| ---------- | ----------- | ------------- | --------------- |
 | 1          | 10000       | 1.0           | 100             |
 ```
 
 **Option 2: Frequency + Duty Cycle**
 ```
 | CH1_status | CH1_time_ms | CH1_frequency | CH1_duty_cycle |
-|------------|-------------|---------------|----------------|
+| ---------- | ----------- | ------------- | -------------- |
 | 1          | 10000       | 2.0           | 10%            |
 ```
 
 **Option 3: Period + Pulse Width**
 ```
 | CH1_status | CH1_time_ms | CH1_period | CH1_pulse_width |
-|------------|-------------|------------|-----------------|
+| ---------- | ----------- | ---------- | --------------- |
 | 1          | 10000       | 1000       | 200             |
 ```
 
 **Option 4: Period + Duty Cycle**
 ```
 | CH1_status | CH1_time_ms | CH1_period | CH1_duty_cycle |
-|------------|-------------|------------|----------------|
+| ---------- | ----------- | ---------- | -------------- |
 | 1          | 10000       | 500        | 20             |
 ```
 
@@ -643,12 +756,12 @@ Time unit suffixes specify what unit the VALUES in a column use. The suffix goes
 
 ### Supported Units
 
-| Unit | Suffixes (All Synonyms Accepted) | Example | How to Use |
-|------|----------------------------------|---------|------------|
-| Seconds | `_s`, `_sec`, `_second`, `_seconds` | `CH1_time_s` | Enter `10` for 10 seconds |
-| Minutes | `_m`, `_min`, `_minute`, `_minutes` | `CH1_time_m` | Enter `5` for 5 minutes |
-| Hours | `_h`, `_hr`, `_hour`, `_hours` | `CH1_time_h` | Enter `2` for 2 hours |
-| Milliseconds | `_ms`, `_msec`, `_millisecond`, `_milliseconds` | `CH1_time_ms` | Enter `500` for 500ms |
+| Unit         | Suffixes (All Synonyms Accepted)                | Example       | How to Use                |
+| ------------ | ----------------------------------------------- | ------------- | ------------------------- |
+| Seconds      | `_s`, `_sec`, `_second`, `_seconds`             | `CH1_time_s`  | Enter `10` for 10 seconds |
+| Minutes      | `_m`, `_min`, `_minute`, `_minutes`             | `CH1_time_m`  | Enter `5` for 5 minutes   |
+| Hours        | `_h`, `_hr`, `_hour`, `_hours`                  | `CH1_time_h`  | Enter `2` for 2 hours     |
+| Milliseconds | `_ms`, `_msec`, `_millisecond`, `_milliseconds` | `CH1_time_ms` | Enter `500` for 500ms     |
 
 💡 **Unit suffixes tell the system how to interpret numbers** - they go in column names, not cell values!
 
@@ -690,7 +803,7 @@ CH4_time_milliseconds → Same (synonym)
 **Example Excel sheet:**
 ```
 | Sections | CH1_status | CH1_time_s | CH2_status | CH2_time_min |
-|----------|------------|------------|------------|--------------|
+| -------- | ---------- | ---------- | ---------- | ------------ |
 | 0        | 1          | 10         | 0          | 5            |
 | 1        | 0          | 5          | 1          | 10           |
 ```
@@ -721,7 +834,7 @@ TIME_MS:500    → 500 milliseconds
 **Excel:** Each channel can use different units
 ```
 | CH1_time_sec | CH2_time_min | CH3_time_hr |
-|--------------|--------------|-------------|
+| ------------ | ------------ | ----------- |
 | 30           | 5            | 2           |
 ```
 
@@ -748,7 +861,7 @@ All time units support decimal values:
 **Excel:**
 ```
 | CH1_time_sec |
-|--------------|
+| ------------ |
 | 10.5         |
 ```
 
@@ -997,4 +1110,4 @@ Compressed: ON 1s, OFF 1s, REPEAT 100
 
 ---
 
-*Last Updated: November 8, 2025*
+*Last Updated: January 24, 2026*

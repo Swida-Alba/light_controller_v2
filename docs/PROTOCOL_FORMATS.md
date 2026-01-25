@@ -5,26 +5,30 @@ Complete specification of Excel and Text protocol formats.
 > 📖 **For detailed syntax reference** (punctuation, placeholders, annotations):  
 > See [PROTOCOL_SYNTAX_REFERENCE.md](PROTOCOL_SYNTAX_REFERENCE.md)
 
+> ✅ **Syntax Validation**: Use `python syntax_check.py <protocol_file>` to validate before running!
+
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Value Ranges](#value-ranges)
 - [Excel Format](#excel-format)
 - [Text Format](#text-format)
 - [Format Comparison](#format-comparison)
 - [Best Practices](#best-practices)
+- [Syntax Validation](#syntax-validation)
 
 ---
 
 ## Overview
 
-Light Controller V2.2 supports two protocol formats:
+Light Controller V2.3 supports two protocol formats:
 
-| Format | Extension | Best For |
-|--------|-----------|----------|
-| Excel | `.xlsx` | Visual editing, spreadsheet users, complex schedules |
-| Text | `.txt` | Version control, programmers, quick edits |
+| Format | Extension | Best For                                             |
+| ------ | --------- | ---------------------------------------------------- |
+| Excel  | `.xlsx`   | Visual editing, spreadsheet users, complex schedules |
+| Text   | `.txt`    | Version control, programmers, quick edits            |
 
 Both formats support all features including:
 - Multi-channel control
@@ -32,6 +36,33 @@ Both formats support all features including:
 - Flexible timing units
 - Start time scheduling
 - Calibration factors
+- **PWM (0-255)**, **DAC (0-4095)**, and **Binary (0-1)** output types
+
+---
+
+## Value Ranges
+
+Different output types support different value ranges:
+
+| Output Type      | Pins/Channels   | Value Range | Description          |
+| ---------------- | --------------- | ----------- | -------------------- |
+| **Binary**       | Digital pins    | `0` or `1`  | Simple ON/OFF        |
+| **PWM**          | Virtual 0-99    | `0-255`     | 8-bit PWM brightness |
+| **DAC (Native)** | Virtual 100-101 | `0-4095`    | 12-bit analog output |
+| **MCP4728**      | Virtual 201-204 | `0-4095`    | External I2C DAC     |
+
+### STATUS Value Interpretation
+
+| Input Value       | Interpretation             | Notes                           |
+| ----------------- | -------------------------- | ------------------------------- |
+| `0`               | OFF (0)                    | Universal OFF                   |
+| `1`               | ON (Binary) or max PWM/DAC | Depends on channel type         |
+| `0.0-1.0` (float) | Scaled to channel max      | `0.5` = 127 (PWM) or 2047 (DAC) |
+| `2-255`           | PWM value (8-bit)          | Capped if channel is binary     |
+| `256-4095`        | DAC value (12-bit)         | Only for DAC channels           |
+
+> **⚠️ Important**: For PWM channels, use **RAMP** mode for precise brightness control.
+> STATUS values may be treated as binary ON/OFF in some contexts.
 
 ---
 
@@ -58,7 +89,7 @@ Defines the light control patterns.
 #### Basic Format
 
 | Sections | CH1_status | CH1_time_sec | CH2_status | CH2_time_sec |
-|----------|------------|--------------|------------|--------------|
+| -------- | ---------- | ------------ | ---------- | ------------ |
 | 0        | 1          | 10           | 0          | 10           |
 | 1        | 0          | 10           | 1          | 10           |
 | 2        | 1          | 10           | 0          | 10           |
@@ -141,28 +172,28 @@ Add pulse parameters for each channel:
 #### Option 1: Frequency + Pulse Width
 
 | CH1_status | CH1_time_ms | CH1_frequency | CH1_pulse_width |
-|------------|-------------|---------------|-----------------|
+| ---------- | ----------- | ------------- | --------------- |
 | 0          | 10000       | 0             | 0               |
 | 1          | 10000       | 1.0           | 100             |
 
 #### Option 2: Frequency + Duty Cycle
 
 | CH1_status | CH1_time_ms | CH1_frequency | CH1_duty_cycle |
-|------------|-------------|---------------|----------------|
+| ---------- | ----------- | ------------- | -------------- |
 | 0          | 10000       | 0             | 0              |
 | 1          | 10000       | 2.0           | 10%            |
 
 #### Option 3: Period + Pulse Width
 
 | CH1_status | CH1_time_ms | CH1_period | CH1_pulse_width |
-|------------|-------------|------------|-----------------|
+| ---------- | ----------- | ---------- | --------------- |
 | 0          | 10000       | 0          | 0               |
 | 1          | 10000       | 1000       | 200             |
 
 #### Option 4: Period + Duty Cycle
 
 | CH1_status | CH1_time_ms | CH1_period | CH1_duty_cycle |
-|------------|-------------|------------|----------------|
+| ---------- | ----------- | ---------- | -------------- |
 | 0          | 10000       | 0          | 0              |
 | 1          | 10000       | 500        | 20             |
 
@@ -239,17 +270,17 @@ Defines when each channel starts.
 
 Best for **≤5 channels**.
 
-| Channel     | CH1      | CH2      | CH3      |
-|-------------|----------|----------|----------|
-| start_time  | 21:00    | 21:00    | 21:15    |
-| wait_status | 1        | 0        | 1        |
+| Channel     | CH1   | CH2   | CH3   |
+| ----------- | ----- | ----- | ----- |
+| start_time  | 21:00 | 21:00 | 21:15 |
+| wait_status | 1     | 0     | 1     |
 
 #### Format 2: Column-Based
 
 Best for **5+ channels**.
 
 | Channels | Start_time | Wait_status |
-|----------|------------|-------------|
+| -------- | ---------- | ----------- |
 | CH1      | 21:00      | 1           |
 | CH2      | 21:00      | 0           |
 | CH3      | 21:15      | 1           |
@@ -301,7 +332,7 @@ Controls LED state during countdown:
 Reuse calibration factor from previous runs.
 
 | CALIBRATION_FACTOR |
-|--------------------|
+| ------------------ |
 | 1.00131            |
 
 **Where to get factor:**
@@ -460,21 +491,21 @@ CH1_DC               → Same (synonym)
 **Sheet: protocol**
 
 | step | CH1_status | CH1_time_sec | CH1_frequency | CH1_duty_cycle | CH2_status | CH2_time_min |
-|------|------------|--------------|---------------|----------------|------------|--------------|
+| ---- | ---------- | ------------ | ------------- | -------------- | ---------- | ------------ |
 | 1    | 1          | 30           | 1.0           | 10%            | 0          | 30           |
 | 2    | 0          | 30           | 0             | 0              | 1          | 30           |
 
 **Sheet: start_time**
 
 | Channels | Start_time | Wait_status |
-|----------|------------|-------------|
+| -------- | ---------- | ----------- |
 | CH1      | 21:00      | 1           |
 | CH2      | 21:00      | 0           |
 
 **Sheet: calibration**
 
 | CALIBRATION_FACTOR |
-|--------------------|
+| ------------------ |
 | 1.00131            |
 
 **Result:**
@@ -831,19 +862,19 @@ CALIBRATION_FACTOR: 1.00131
 
 ### Feature Support
 
-| Feature | Excel | Text |
-|---------|-------|------|
-| Multi-channel | ✓ | ✓ |
-| Time units | ✓ | ✓ |
-| Pulse control | ✓ | ✓ |
-| Start time formats | ✓ | ✓ |
-| Wait status | ✓ | ✓ |
-| Wait pulse | ✓ | ✓ |
-| Calibration | ✓ | ✓ |
-| Comments | - | ✓ |
-| Visual editing | ✓ | - |
-| Version control | - | ✓ |
-| Syntax highlighting | - | ✓* |
+| Feature             | Excel | Text |
+| ------------------- | ----- | ---- |
+| Multi-channel       | ✓     | ✓    |
+| Time units          | ✓     | ✓    |
+| Pulse control       | ✓     | ✓    |
+| Start time formats  | ✓     | ✓    |
+| Wait status         | ✓     | ✓    |
+| Wait pulse          | ✓     | ✓    |
+| Calibration         | ✓     | ✓    |
+| Comments            | -     | ✓    |
+| Visual editing      | ✓     | -    |
+| Version control     | -     | ✓    |
+| Syntax highlighting | -     | ✓*   |
 
 *With VS Code extension
 
@@ -973,7 +1004,70 @@ git tag -a v1.2 -m "Working pulse configuration"
 - [Templates](TEMPLATES.md) - Ready-to-use protocol templates
 - [Examples](EXAMPLES.md) - Complete working examples
 - [Usage Guide](USAGE.md) - How to use protocols
+- [PROTOCOL_SYNTAX_REFERENCE.md](PROTOCOL_SYNTAX_REFERENCE.md) - Detailed syntax rules
 
 ---
 
-*Last Updated: December 12, 2025*
+## Syntax Validation
+
+### Before Running Protocols
+
+Always validate protocol syntax before running:
+
+```bash
+# Validate text protocol
+python syntax_check.py protocol.txt
+
+# Validate Excel protocol
+python syntax_check.py protocol.xlsx
+
+# Strict mode (treat warnings as errors)
+python syntax_check.py protocol.txt --strict
+```
+
+### What Gets Checked
+
+| Category          | Text (.txt)        | Excel (.xlsx)             |
+| ----------------- | ------------------ | ------------------------- |
+| PATTERN syntax    | ✅ Full             | ✅ Column names            |
+| RAMP modes        | ✅ Full             | ⚠️ Warning (not supported) |
+| PULSE format      | ✅ Full             | ✅ Basic                   |
+| Required sheets   | N/A                | ✅ protocol, start_time    |
+| Sheet names       | N/A                | ✅ Must be lowercase       |
+| Channel numbering | ✅                  | ✅                         |
+| Time values       | ✅                  | ✅                         |
+| Typo detection    | ✅ With suggestions | ✅                         |
+
+### Fuzzy Matching for Typos
+
+The checker suggests corrections for common typos:
+
+```
+Line 4 - Unknown field 'PATERN'
+  Did you mean:
+    • PATTERN
+
+Line 16 - Unknown block 'STAR_TIME'
+  Did you mean:
+    • START_TIME
+```
+
+### Integration with Parser
+
+The syntax checker can be called programmatically:
+
+```python
+from syntax_check import check_protocol
+
+# Returns (is_valid, errors, warnings)
+is_valid, errors, warnings = check_protocol('protocol.txt')
+
+if not is_valid:
+    for error in errors:
+        print(f"ERROR: {error}")
+    sys.exit(1)
+```
+
+---
+
+*Last Updated: January 2025*

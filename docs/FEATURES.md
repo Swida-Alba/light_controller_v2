@@ -242,7 +242,7 @@ Excel protocols support two layout formats.
 **Row-Based Format** (Best for ≤5 channels):
 ```
 | Channel     | CH1   | CH2   | CH3   |
-|-------------|-------|-------|-------|
+| ----------- | ----- | ----- | ----- |
 | start_time  | 21:00 | 21:00 | 21:15 |
 | wait_status | 1     | 0     | 1     |
 ```
@@ -250,7 +250,7 @@ Excel protocols support two layout formats.
 **Column-Based Format** (Best for 5+ channels):
 ```
 | Channels | Start_time | Wait_status |
-|----------|------------|-------------|
+| -------- | ---------- | ----------- |
 | CH1      | 21:00      | 1           |
 | CH2      | 21:00      | 0           |
 | CH3      | 21:15      | 1           |
@@ -342,12 +342,12 @@ For 10% duty cycle:
 
 Support all possible pulse parameter combinations:
 
-| Timing | Width/Duty | Example |
-|--------|------------|---------|
-| Frequency | Pulse Width | `f=1.0, pw=100` |
-| Frequency | Duty Cycle | `f=2.0, dc=10%` |
-| Period | Pulse Width | `T=1000, pw=200` |
-| Period | Duty Cycle | `T=500, dc=20` |
+| Timing    | Width/Duty  | Example          |
+| --------- | ----------- | ---------------- |
+| Frequency | Pulse Width | `f=1.0, pw=100`  |
+| Frequency | Duty Cycle  | `f=2.0, dc=10%`  |
+| Period    | Pulse Width | `T=1000, pw=200` |
+| Period    | Duty Cycle  | `T=500, dc=20`   |
 
 **Automatic Conversion:**
 - Program normalizes all formats internally
@@ -478,27 +478,27 @@ Enhanced error checking with specific messages:
 
 ### By Arduino Board
 
-| Feature | Uno | Mega | Due |
-|---------|-----|------|-----|
-| Channels | 6-8 | 10-15 | 15-20 |
-| Flash Memory | 32KB | 256KB | 512KB |
-| SRAM | 2KB | 8KB | 96KB |
-| Max Patterns | 10 | 20 | 50 |
-| Pulse Control | ✓ | ✓ | ✓ |
+| Feature       | Uno      | Mega     | Due      |
+| ------------- | -------- | -------- | -------- |
+| Channels      | 6-8      | 10-15    | 15-20    |
+| Flash Memory  | 32KB     | 256KB    | 512KB    |
+| SRAM          | 2KB      | 8KB      | 96KB     |
+| Max Patterns  | 10       | 20       | 50       |
+| Pulse Control | ✓        | ✓        | ✓        |
 | Upload Method | Standard | Standard | Special* |
 
 *See [Arduino Due Setup](ARDUINO_DUE.md)
 
 ### By Protocol Format
 
-| Feature | Excel | Text |
-|---------|-------|------|
-| Visual Editing | ✓ | - |
-| Comments | - | ✓ |
-| Version Control | - | ✓ |
-| Quick Edit | ✓ | ✓ |
-| Complex Logic | ✓ | ✓ |
-| Syntax Highlight | - | ✓* |
+| Feature          | Excel | Text |
+| ---------------- | ----- | ---- |
+| Visual Editing   | ✓     | -    |
+| Comments         | -     | ✓    |
+| Version Control  | -     | ✓    |
+| Quick Edit       | ✓     | ✓    |
+| Complex Logic    | ✓     | ✓    |
+| Syntax Highlight | -     | ✓*   |
 
 *With VS Code extension
 
@@ -509,11 +509,22 @@ Enhanced error checking with specific messages:
 ### Planned Features
 
 - 🔄 Web interface for protocol creation
-- 🔄 Real-time monitoring
+- ✅ Real-time monitoring with dynamic Y-axis scaling
+- ✅ PWM (0-255) and DAC (0-4095) support
+- ✅ MCP4728 I2C DAC support (pins 201-204)
+- ✅ Native DAC support (pins 100-101)
 - 🔄 Pattern library/templates
 - 🔄 Conditional logic (if/then)
 - 🔄 External sensor input
 - 🔄 WiFi/Bluetooth control
+
+### Real-Time Monitoring (Implemented v2.3)
+
+- **Dynamic Y-axis scaling** - Auto-adjusts to fit actual data values
+- **Multiple value ranges**: Binary (0-1), PWM (0-255), DAC (0-4095)
+- **Sub-range support**: DAC using only 2000-2500 zooms appropriately
+- **Interactive HTML export** with range slider navigation
+- **Console bars** adapt to detected value range
 
 ### Request Features
 
@@ -529,4 +540,4 @@ Have an idea? [Open an issue](https://github.com/Swida-Alba/light_controller_v2/
 
 ---
 
-*Last Updated: December 12, 2025*
+*Last Updated: January 24, 2026*

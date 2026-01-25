@@ -45,8 +45,11 @@ FLAGS
 =============================================================================
 
 --monitor    Enable real-time monitoring of Arduino $CHMON messages after
-             protocol upload. Displays live PWM values and saves to CSV.
-             Press Ctrl+C to stop monitoring.
+             protocol upload. Displays live PWM values and saves to CSV/HTML.
+             Overrides DEFAULT_MONITOR_MODE setting.
+
+--no-monitor Disable monitoring even if DEFAULT_MONITOR_MODE is True.
+             Useful for scripted/automated runs.
 
 =============================================================================
 """
@@ -72,7 +75,7 @@ except ImportError:
 
 # Default pattern length (number of patterns per channel)
 # Set to None to use default value of 2
-DEFAULT_PATTERN_LENGTH = 2
+DEFAULT_PATTERN_LENGTH = 4
 
 # Default serial port for Arduino connection
 # Examples:
@@ -90,6 +93,18 @@ DEFAULT_PORT = None
 # Set to None to use file dialog
 DEFAULT_PROTOCOL_FILE = None
 
+# Default monitor mode (real-time PWM visualization)
+# True:  Always enable monitoring (show live PWM values after upload)
+# False: Disable monitoring by default
+# Can be overridden by --monitor or --no-monitor flags
+DEFAULT_MONITOR_MODE = True
+
+# Default monitor print step in milliseconds (how often Arduino sends PWM values)
+# 100ms = 10 samples/second (good for capturing fast pulses)
+# 1000ms = 1 sample/second (lower data rate)
+# Range: 10-10000ms
+DEFAULT_MONITOR_STEP_MS = 100
+
 # =============================================================================
 
 
@@ -104,10 +119,21 @@ if __name__ == '__main__':
         pattern_length = DEFAULT_PATTERN_LENGTH or 2
         port = DEFAULT_PORT
         protocol_file = DEFAULT_PROTOCOL_FILE
-        monitor_mode = '--monitor' in sys.argv
         
-        # Remove --monitor from argv for positional argument parsing
-        args = [a for a in sys.argv if a != '--monitor']
+        # Monitor mode: check flags first, then fall back to in-file setting
+        # --monitor forces ON, --no-monitor forces OFF, otherwise use DEFAULT_MONITOR_MODE
+        if '--monitor' in sys.argv:
+            monitor_mode = True
+            monitor_source = 'from --monitor flag'
+        elif '--no-monitor' in sys.argv:
+            monitor_mode = False
+            monitor_source = 'from --no-monitor flag'
+        else:
+            monitor_mode = DEFAULT_MONITOR_MODE
+            monitor_source = 'from in-file setting'
+        
+        # Remove monitor flags from argv for positional argument parsing
+        args = [a for a in sys.argv if a not in ('--monitor', '--no-monitor')]
         
         if len(args) > 1:
             try:
@@ -130,7 +156,7 @@ if __name__ == '__main__':
         elif DEFAULT_PORT:
             print(f'Using port: {port} (from in-file setting)')
         
-        # Get protocol file from command line if provided, otherwise use in-file default
+        # Get protocol file from command line if provided, otherwise defer to after connection
         if len(args) > 3:
             protocol_file = args[3]
             if not os.path.exists(protocol_file):
@@ -145,9 +171,48 @@ if __name__ == '__main__':
                 print(f'Using protocol file: {protocol_file} (from in-file setting)')
         
         if monitor_mode:
-            print('Monitor mode: ENABLED (will capture $CHMON data after execution)')
+            print(f'Monitor mode: ENABLED ({monitor_source})')
+        else:
+            print(f'Monitor mode: DISABLED ({monitor_source})')
         
-        # If no protocol file provided, use file dialog
+        # =================================================================
+        # STEP 1: Connect to Arduino FIRST (before protocol selection)
+        # =================================================================
+        from lcfunc import SetUpSerialPort, ClearSerialBuffer, SendGreeting, SetMonitorEnabled
+        
+        print('\n' + '='*60)
+        print('STEP 1: Connecting to Arduino...')
+        print('='*60)
+        
+        ser = SetUpSerialPort(board_type='Arduino', baudrate=9600, port=port)
+        if not ser:
+            raise ValueError('Serial port is not available.')
+        
+        # Clear buffer and send greeting to confirm board connection
+        ClearSerialBuffer(ser, print_flag=True)
+        arduino_config = SendGreeting(ser)
+        
+        print(f'\n✓ Arduino connected successfully!')
+        if arduino_config:
+            print(f'  Board config: PATTERN_LENGTH={arduino_config.get("pattern_length", "?")}')
+            # Show channel types if available
+            channel_types = arduino_config.get('channel_types', '')
+            if channel_types:
+                type_names = {'P': 'PWM', 'D': 'DAC', 'M': 'MCP4728', 'B': 'Binary'}
+                ch_info = [f'CH{i+1}:{type_names.get(t, t)}' for i, t in enumerate(channel_types)]
+                print(f'  Channel types: {", ".join(ch_info)}')        
+        # Configure monitor mode on Arduino
+        print(f'\n📡 Configuring Arduino monitor...')
+        SetMonitorEnabled(ser, enabled=monitor_mode)
+        
+        # =================================================================
+        # STEP 2: Select protocol file (after board is confirmed)
+        # =================================================================
+        print('\n' + '='*60)
+        print('STEP 2: Selecting protocol file...')
+        print('='*60)
+        
+        # If no protocol file provided, use file dialog NOW
         if not protocol_file:
             print('\nPlease select your protocol file...')
             
@@ -167,17 +232,26 @@ if __name__ == '__main__':
         
         if not protocol_file:
             print('No file selected. Exiting.')
+            ser.close()
         else:
             print(f'\nSelected protocol: {protocol_file}')
             
+            # =================================================================
+            # STEP 3: Parse and execute protocol
+            # =================================================================
+            print('\n' + '='*60)
+            print('STEP 3: Parsing and executing protocol...')
+            print('='*60)
+            
             # Create parser instance (using context manager for automatic cleanup)
+            # Pass the already-connected serial port
             with LightControllerParser(protocol_file, pattern_length=pattern_length, calibration_method='v2') as parser:
-                # Setup serial connection with pattern length verification
-                if not parser.setup_serial(board_type='Arduino', baudrate=9600, 
-                                          verify_pattern_length=True, port=port):
-                    raise ValueError('Serial port is not available.')
+                # Use existing serial connection instead of setting up new one
+                parser.ser = ser
+                parser.arduino_config = arduino_config
                 
-                # Parse and execute
+                # Generate and send commands (serial already connected)
+                parser.generate_pattern_commands()
                 commands_file = parser.parse_and_execute()
                 print(f'\nProtocol execution completed successfully!')
                 print(f'Commands saved to: {commands_file}')
@@ -235,11 +309,24 @@ if __name__ == '__main__':
                 
                 # Optional: Monitor serial output for $CHMON messages
                 if monitor_mode:
+                    # Set monitor print step (how often Arduino sends PWM values)
+                    from lcfunc import SetMonitorStep, SayBye
+                    print(f'\n📡 Configuring monitor...')
+                    SetMonitorStep(parser.ser, DEFAULT_MONITOR_STEP_MS)
+                    
                     # Send Bye command to start execution (but don't close connection)
-                    from lcfunc import SayBye
                     SayBye(parser.ser)
                     
                     monitor_csv = commands_file.replace('.txt', '_monitored.csv')
+                    monitor_html = commands_file.replace('.txt', '_monitored.html')
+                    
+                    # Get loop info for display in real-time monitor
+                    loop_info = parser.loop if hasattr(parser, 'loop') else {}
+                    
+                    # Print loop info if any channels are looping
+                    if loop_info and any(v == 1 for v in loop_info.values()):
+                        looping_channels = [ch for ch, v in loop_info.items() if v == 1]
+                        print(f'\n🔄 LOOP enabled for: {", ".join(looping_channels)}')
                     
                     # Try to use matplotlib real-time plot window
                     try:
@@ -247,13 +334,16 @@ if __name__ == '__main__':
                         
                         if MATPLOTLIB_AVAILABLE:
                             print('\n📊 Launching real-time PWM visualization window...')
-                            print('   (Close window or press Ctrl+C to stop)\n')
+                            print('   (5-minute display window, data saved on close)')
+                            print('   Close window or press Ctrl+C to stop\n')
                             
                             # run_realtime_plot is blocking - it shows the matplotlib window
                             result = run_realtime_plot(
                                 serial_port=parser.ser,
                                 csv_output=monitor_csv,
-                                num_channels=3  # Match Arduino MAX_CHANNEL_NUM
+                                html_output=monitor_html,
+                                num_channels=len(parser.valid_channels) or 4,  # Use actual channel count from protocol
+                                loop_info=loop_info
                             )
                             
                             if result:

@@ -54,3 +54,6 @@ START_TIME: {'CH1': 0, 'CH2': 0}
 
 # Wait status: OFF during countdown (not relevant here since countdown=0)
 WAIT_STATUS: {'CH1': 0, 'CH2': 0}
+
+# Loop settings (0=stop after completion, 1=loop forever)
+LOOP: {'CH1': 0, 'CH2': 0}

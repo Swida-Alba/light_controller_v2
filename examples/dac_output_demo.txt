@@ -1,0 +1,53 @@
+# ===================================================================================
+# DAC OUTPUT DEMO (v2.3.2)
+# ===================================================================================
+# Demonstrates analog output using MCP4728 I2C DAC (virtual pins 201-204)
+# and native DAC pins (virtual pins 100-101 on Arduino Due)
+#
+# HARDWARE REQUIREMENTS:
+#   - MCP4728 I2C DAC module connected to SDA/SCL
+#   - OR Arduino Due with native DAC pins (DAC0/DAC1)
+#
+# VIRTUAL PIN SYSTEM:
+#   0-99:    PWM pins (Arduino digital pin numbers)
+#   100-101: Native DAC (100=DAC0, 101=DAC1 on Arduino Due)
+#   201-204: MCP4728 I2C DAC (201=CH_A, 202=CH_B, 203=CH_C, 204=CH_D)
+#
+# PIN CONFIGURATION (set in Arduino sketch):
+#   const int channelPins[MAX_CHANNEL_NUM] = {201, 202, 203, 13};
+#   Types auto-detected from pin numbers:
+#   CH1-CH3: MCP4728 channels A-C (12-bit DAC, pins 201-203)
+#   CH4: Standard PWM pin 13 (8-bit PWM)
+#
+# VALUE HANDLING:
+#   - Use 0.0-1.0 for normalized values (scales to 255 or 4095)
+#   - Use 0-4095 for direct 12-bit DAC values
+#   - Using 0-255 on DAC channels works but triggers warning (low resolution)
+#
+# Total duration: ~30 seconds
+# ===================================================================================
+
+# CHANNEL 1 (MCP4728 Channel A): Smooth 12-bit ramp using 12-bit values
+# True analog output 0-5V (or 0-VDD depending on MCP4728 reference)
+# Using full 12-bit resolution: 0-4095
+PATTERN:1;CH:1;RAMP:(C:0,4095,10000),(C:4095,0,10000);REPEATS:10
+
+# CHANNEL 2 (MCP4728 Channel B): Linear fade using normalized values
+# Normalized 0.0-1.0 auto-scales to 0-4095
+PATTERN:1;CH:2;RAMP:(L:0.0,1.0,7500),(L:1.0,0.0,7500);REPEATS:2
+
+# CHANNEL 3 (MCP4728 Channel C): Step pattern using 12-bit values
+# For calibration: 0V, 1.25V, 2.5V, 3.75V, 5V
+# Values: 0, 1024, 2048, 3072, 4095
+PATTERN:1;CH:3;STATUS:0,1024,2048,3072,4095;TIME_MS:6000,6000,6000,6000,6000;REPEATS:1
+
+# CHANNEL 4 (Standard PWM): 8-bit PWM for comparison
+# Using 8-bit values (0-255) for PWM channel
+PATTERN:1;CH:4;RAMP:(C:0,255,15000),(C:255,0,15000);REPEATS:1
+
+# Start all channels simultaneously
+START_TIME: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}
+WAIT_STATUS: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}
+
+# Loop settings (0=stop after completion, 1=loop forever)
+LOOP: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}

@@ -1,0 +1,56 @@
+# ===================================================================================
+# MCP4728 DAC OUTPUT DEMO (v2.3.0)
+# ===================================================================================
+# Tests all 4 MCP4728 channels with smooth PWM ramps
+# Duration: ~2 minutes (120 seconds)
+# Channels: CH1-CH4 using MCP4728 virtual pins 201-204
+#
+# HARDWARE SETUP:
+#   Arduino Uno R4 WiFi + MCP4728 I2C DAC
+#   MCP4728 connected: SDA→SDA, SCL→SCL, VCC→3.3V, GND→GND
+#
+# ARDUINO FIRMWARE CONFIGURATION:
+#   const int channelPins[MAX_CHANNEL_NUM] = {201, 202, 203, 204};
+#   This maps all 4 channels to MCP4728 (virtual pins 201-204)
+#
+# USAGE:
+#   Terminal 1 (optional - for live visualization):
+#     python serial_monitor.py --live-plot --port /dev/cu.usbmodemXXXX
+#
+#   Terminal 2 (run the protocol):
+#     python light_controller_parser.py examples/auto_calibration/mcp4728_demo.txt
+#
+# CALIBRATION: Uses auto-calibration database (no manual factor needed)
+# ===================================================================================
+
+# === Section 1: Sequential Channel Ramps (60s) ===
+# CH1: Ramp up 0->4095 over 15s, hold 30s, ramp down over 15s (60s total)
+PATTERN:1;CH:1;RAMP:(C:0,4095,15000),(C:4095,4095,30000),(C:4095,0,15000);REPEATS:1
+
+# CH2: Delay 15s, ramp up over 15s, hold 15s, ramp down over 15s (60s total)
+PATTERN:1;CH:2;RAMP:(C:0,0,15000),(C:0,4095,15000),(C:4095,4095,15000),(C:4095,0,15000);REPEATS:1
+
+# CH3: Delay 30s, ramp up over 15s, ramp down over 15s (60s total)
+PATTERN:1;CH:3;RAMP:(C:0,0,30000),(C:0,4095,15000),(C:4095,0,15000);REPEATS:1
+
+# CH4: Delay 45s, quick ramp up/down (60s total)
+PATTERN:1;CH:4;RAMP:(C:0,0,45000),(C:0,4095,7500),(C:4095,0,7500);REPEATS:1
+
+# === Section 2: Wave Pattern (60s) ===
+# All channels do synchronized breathing after 60s mark
+
+# CH1: After 60s, breathe 2 cycles (15s up, 15s down each = 60s)
+PATTERN:2;CH:1;RAMP:(C:0,4095,15000),(C:4095,0,15000);REPEATS:2
+
+# CH2: Similar breathing, offset start values
+PATTERN:2;CH:2;RAMP:(C:2048,4095,15000),(C:4095,2048,15000);REPEATS:2
+
+# CH3: Inverted breathing
+PATTERN:2;CH:3;RAMP:(C:4095,0,15000),(C:0,4095,15000);REPEATS:2
+
+# CH4: Quarter amplitude breathing
+PATTERN:2;CH:4;RAMP:(C:0,1024,15000),(C:1024,0,15000);REPEATS:2
+
+# Start times: Section 1 at 0s, Section 2 at 60s
+START_TIME: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}
+WAIT_STATUS: {'CH1': 0, 'CH2': 0, 'CH3': 0, 'CH4': 0}

@@ -16,3 +16,6 @@ PATTERN:1;CH:2;STATUS:255,0;TIME_MS:1000,1000;REPEATS:30
 # Start immediately
 START_TIME: {'CH1': 0, 'CH2': 0}
 WAIT_STATUS: {'CH1': 0, 'CH2': 0}
+
+# Loop settings (0=stop after completion, 1=loop forever)
+LOOP: {'CH1': 0, 'CH2': 0}

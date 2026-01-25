@@ -2,34 +2,60 @@
 
 A detailed technical reference for Light Controller protocol syntax, covering punctuation marks, format components, placeholders, and structure.
 
+> ✅ **Syntax Validation**: Use `python syntax_check.py <protocol_file>` to validate syntax before running!
+
 ---
 
 ## Table of Contents
 
-- [Document Purpose](#document-purpose)
-- [Protocol Structure Overview](#protocol-structure-overview)
-- [Punctuation & Delimiter Reference](#punctuation--delimiter-reference)
-- [Text Protocol Components](#text-protocol-components)
-  - [PATTERN Command](#pattern-command)
-  - [RAMP Command](#ramp-command)
-  - [START_TIME Block](#start_time-block)
-  - [WAIT_STATUS Block](#wait_status-block)
-  - [WAIT_PULSE Block](#wait_pulse-block)
-  - [CALIBRATION_FACTOR](#calibration_factor)
-  - [Comments](#comments)
-- [Excel Protocol Components](#excel-protocol-components)
-  - [Sheet Names](#sheet-names)
-  - [Column Naming](#column-naming)
-  - [Time Unit Suffixes](#time-unit-suffixes)
-- [RAMP Segment Syntax (Detailed)](#ramp-segment-syntax-detailed)
-  - [L Mode (Linear)](#l-mode-linear)
-  - [C Mode (Cosine)](#c-mode-cosine)
-  - [I Mode (Ease-In)](#i-mode-ease-in)
-  - [O Mode (Ease-Out)](#o-mode-ease-out)
-  - [X Mode (Custom t-Range)](#x-mode-custom-t-range)
-  - [F Mode (Custom Functions)](#f-mode-custom-functions)
-- [Placeholder Reference](#placeholder-reference)
-- [Examples with Annotations](#examples-with-annotations)
+- [Protocol Syntax Reference (v2.3.0)](#protocol-syntax-reference-v230)
+  - [Table of Contents](#table-of-contents)
+  - [Document Purpose](#document-purpose)
+  - [Protocol Structure Overview](#protocol-structure-overview)
+    - [Text Protocol (.txt) Structure](#text-protocol-txt-structure)
+    - [Excel Protocol (.xlsx) Structure](#excel-protocol-xlsx-structure)
+  - [Punctuation \& Delimiter Reference](#punctuation--delimiter-reference)
+    - [Semicolon `;` - Field Separator](#semicolon----field-separator)
+    - [Colon `:` - Key-Value Separator](#colon----key-value-separator)
+    - [Comma `,` - Value List Separator](#comma----value-list-separator)
+    - [Parentheses `()` - RAMP Segment Delimiters](#parentheses----ramp-segment-delimiters)
+    - [Pipe `|` - RAMP Option Separator](#pipe----ramp-option-separator)
+    - [Curly Braces `{}` - Python Dictionary Blocks](#curly-braces----python-dictionary-blocks)
+    - [Single Quotes `'` - String Keys in Dicts](#single-quotes----string-keys-in-dicts)
+    - [Hash `#` - Comment Marker](#hash----comment-marker)
+  - [Text Protocol Components](#text-protocol-components)
+    - [PATTERN Command](#pattern-command)
+    - [RAMP Command](#ramp-command)
+    - [START\_TIME Block](#start_time-block)
+    - [WAIT\_STATUS Block](#wait_status-block)
+    - [WAIT\_PULSE Block](#wait_pulse-block)
+    - [CALIBRATION\_FACTOR](#calibration_factor)
+    - [Comments](#comments)
+  - [Excel Protocol Components](#excel-protocol-components)
+    - [Sheet Names](#sheet-names)
+    - [Column Naming](#column-naming)
+    - [Time Unit Suffixes](#time-unit-suffixes)
+  - [RAMP Segment Syntax (Detailed)](#ramp-segment-syntax-detailed)
+    - [L Mode (Linear)](#l-mode-linear)
+    - [C Mode (Cosine)](#c-mode-cosine)
+    - [I Mode (Ease-In)](#i-mode-ease-in)
+    - [O Mode (Ease-Out)](#o-mode-ease-out)
+    - [X Mode (Custom t-Range)](#x-mode-custom-t-range)
+    - [F Mode (Custom Functions)](#f-mode-custom-functions)
+  - [Placeholder Reference](#placeholder-reference)
+    - [Pattern Command Placeholders](#pattern-command-placeholders)
+    - [RAMP Placeholders](#ramp-placeholders)
+    - [Time Placeholders](#time-placeholders)
+    - [Pulse Placeholders](#pulse-placeholders)
+  - [Examples with Annotations](#examples-with-annotations)
+    - [Basic Pattern (Annotated)](#basic-pattern-annotated)
+    - [Multi-Segment RAMP (Annotated)](#multi-segment-ramp-annotated)
+    - [Complete Protocol (Annotated)](#complete-protocol-annotated)
+  - [Quick Reference Card](#quick-reference-card)
+    - [Punctuation Summary](#punctuation-summary)
+    - [Mode Quick Reference](#mode-quick-reference)
+  - [See Also](#see-also)
+    - [Valid Protocol Examples](#valid-protocol-examples)
 
 ---
 
@@ -62,6 +88,8 @@ For RAMP/easing details, see [PWM_RAMP_CONTROL.md](PWM_RAMP_CONTROL.md).
 │ WAIT_STATUS block (optional)                                │
 ├─────────────────────────────────────────────────────────────┤
 │ WAIT_PULSE block (optional)                                 │
+├─────────────────────────────────────────────────────────────┤
+│ LOOP block (optional)                                       │
 ├─────────────────────────────────────────────────────────────┤
 │ CALIBRATION_FACTOR (optional)                               │
 └─────────────────────────────────────────────────────────────┘
@@ -229,32 +257,51 @@ PATTERN:<id>;CH:<channel>;RAMP:<segments>;REPEATS:<count>
 
 **Field Breakdown:**
 
-| Field | Syntax | Description | Required |
-|-------|--------|-------------|----------|
-| PATTERN | `PATTERN:<n>` | Pattern ID, starts at 1 | Yes |
-| CH | `CH:<n>` | Channel number, starts at 1 | Yes |
-| STATUS | `STATUS:<v1>,<v2>,...` | PWM values (0-255) | Yes* |
-| RAMP | `RAMP:<segments>` | Gradient transitions | Yes* |
-| TIME_* | `TIME_<UNIT>:<t1>,<t2>,...` | Durations | Yes* |
-| REPEATS | `REPEATS:<n>` | Repetition count | Yes |
-| PULSE | `PULSE:<params>` | Pulse modulation | No |
+| Field   | Syntax                      | Description                 | Required |
+| ------- | --------------------------- | --------------------------- | -------- |
+| PATTERN | `PATTERN:<n>`               | Pattern ID, starts at 1     | Yes      |
+| CH      | `CH:<n>`                    | Channel number, starts at 1 | Yes      |
+| STATUS  | `STATUS:<v1>,<v2>,...`      | PWM values (0-255)          | Yes*     |
+| RAMP    | `RAMP:<segments>`           | Gradient transitions        | Yes*     |
+| TIME_*  | `TIME_<UNIT>:<t1>,<t2>,...` | Durations                   | Yes*     |
+| REPEATS | `REPEATS:<n>`               | Repetition count            | Yes      |
+| PULSE   | `PULSE:<params>`            | Pulse modulation            | No       |
 
 *Either STATUS+TIME or RAMP required, not both.
 
 **UNIT Options:**
-| Unit | Keyword | Example |
-|------|---------|---------|
+| Unit         | Keyword   | Example        |
+| ------------ | --------- | -------------- |
 | Milliseconds | `TIME_MS` | `TIME_MS:5000` |
-| Seconds | `TIME_S` | `TIME_S:5` |
-| Minutes | `TIME_M` | `TIME_M:1` |
-| Hours | `TIME_H` | `TIME_H:0.5` |
+| Seconds      | `TIME_S`  | `TIME_S:5`     |
+| Minutes      | `TIME_M`  | `TIME_M:1`     |
+| Hours        | `TIME_H`  | `TIME_H:0.5`   |
 
 **STATUS Values:**
-| Value | Meaning |
-|-------|---------|
-| `0` | OFF (0% brightness) |
-| `1-254` | Partial brightness |
-| `255` | Full ON (100%) |
+| Value      | Meaning                                        | Output Range                |
+| ---------- | ---------------------------------------------- | --------------------------- |
+| `0`        | OFF (0% brightness)                            | 0                           |
+| `1`        | **HIGH** (interpreted as max for channel type) | 255 (PWM) or 4095 (DAC)     |
+| `0.0`      | Float: OFF (0% brightness)                     | 0                           |
+| `1.0`      | **HIGH** (same as integer 1)                   | 255 (PWM) or 4095 (DAC)     |
+| `0.0-1.0`  | Float: Scaled to channel max                   | 0-255 (PWM) or 0-4095 (DAC) |
+| `2-255`    | Direct PWM value (8-bit)                       | For PWM channels            |
+| `256-4095` | Direct DAC value (12-bit)                      | For DAC/MCP4728 channels    |
+
+> **⚠️ IMPORTANT: Integer 1 and Float 1.0 as HIGH**
+> 
+> When a protocol uses only binary values `0` and `1` (or `0.0` and `1.0`) for STATUS:
+> - **Integer `1`** is interpreted as **HIGH voltage (max)**: 255 for PWM, 4095 for DAC
+> - **Float `1.0`** is **also** interpreted as **HIGH voltage (max)**
+> - This allows simple ON/OFF control without knowing the channel type (PWM vs DAC)
+> 
+> For specific brightness levels, use explicit values like `STATUS:128` or `RAMP:(L:128,128,5000)`.
+
+> **⚠️ STATUS vs RAMP for PWM/DAC Control:**
+> - **STATUS** with values 0/1 is treated as **binary ON/OFF**
+> - **RAMP** provides **actual PWM/DAC control** with smooth transitions
+> - For precise brightness levels, use `RAMP:(L:128,128,5000)` instead of `STATUS:128`
+> - In HTML visualization, STATUS patterns show the actual value provided
 
 ### RAMP Command
 
@@ -310,13 +357,13 @@ START_TIME: {
 ```
 
 **Value Formats:**
-| Format | Example | Description |
-|--------|---------|-------------|
-| Time only | `'21:00'` | Today at 9 PM |
-| Time with seconds | `'21:00:30'` | Today at 9:00:30 PM |
-| Full datetime | `'2025-01-15 21:00:00'` | Specific date & time |
-| Countdown (seconds) | `120` | Start in 2 minutes |
-| Countdown (float) | `30.5` | Start in 30.5 seconds |
+| Format              | Example                 | Description           |
+| ------------------- | ----------------------- | --------------------- |
+| Time only           | `'21:00'`               | Today at 9 PM         |
+| Time with seconds   | `'21:00:30'`            | Today at 9:00:30 PM   |
+| Full datetime       | `'2025-01-15 21:00:00'` | Specific date & time  |
+| Countdown (seconds) | `120`                   | Start in 2 minutes    |
+| Countdown (float)   | `30.5`                  | Start in 30.5 seconds |
 
 **Example:**
 ```txt
@@ -371,6 +418,62 @@ WAIT_PULSE: {
 }
 ```
 
+### LOOP Block
+
+**Syntax:**
+```txt
+LOOP: {
+    '<channel>': <0_or_1>,
+    ...
+}
+```
+
+**Values:**
+- `0` = Stop after completing all patterns (default)
+- `1` = Loop forever (restart patterns after completion)
+
+**Example:**
+```txt
+LOOP: {
+    'CH1': 1,
+    'CH2': 0,
+    'CH3': 1,
+    'CH4': 0
+}
+```
+
+> **💡 Use Case:** The LOOP block allows certain channels to continuously repeat their patterns
+> while others execute once and stop. This is useful for creating ambient lighting effects
+> that run indefinitely alongside scheduled events.
+
+> **⚠️ Important:** When LOOP is enabled, the channel will **skip the wait pattern (pattern 0)** on restart.
+> The wait/countdown pattern only executes once at the beginning of the protocol.
+> On loop restart, execution resumes from pattern 1 (the first actual protocol pattern).
+
+**Loop Behavior:**
+1. **First execution**: Pattern 0 (wait/countdown) → Pattern 1 → Pattern 2 → ... → End
+2. **Loop restart**: Skip Pattern 0 → Pattern 1 → Pattern 2 → ... → End
+3. **Repeats indefinitely** until manually stopped
+
+**Example with Wait:**
+```txt
+# Wait 60 seconds before starting, then loop the breathing pattern forever
+WAIT_STATUS: {'CH1': 0}
+START_TIME: {'CH1': 60}  # 60 second countdown
+
+PATTERN:1;CH:1;RAMP:(C:0,255,5000);REPEATS:1  # Fade in
+PATTERN:2;CH:1;RAMP:(C:255,0,5000);REPEATS:1  # Fade out
+
+LOOP: {
+    'CH1': 1
+}
+```
+
+In this example:
+- First cycle: Waits 60s → Fade in → Fade out
+- Loop cycle: Fade in → Fade out (no wait)
+- Continues indefinitely
+
 ### CALIBRATION_FACTOR
 
 **Syntax:**
@@ -407,11 +510,11 @@ CALIBRATION_FACTOR: 1.00131
 
 **⚠️ CRITICAL: Sheet names MUST be lowercase!**
 
-| Sheet | Name | Required |
-|-------|------|----------|
-| Protocol | `protocol` | Yes |
-| Start Time | `start_time` | Yes |
-| Calibration | `calibration` | No |
+| Sheet       | Name          | Required |
+| ----------- | ------------- | -------- |
+| Protocol    | `protocol`    | Yes      |
+| Start Time  | `start_time`  | Yes      |
+| Calibration | `calibration` | No       |
 
 **❌ WRONG:** `Protocol`, `PROTOCOL`, `Start_Time`, `Calibration`
 **✅ CORRECT:** `protocol`, `start_time`, `calibration`
@@ -424,12 +527,12 @@ CH<N>_<parameter>[_<unit>]
 ```
 
 **Components:**
-| Part | Description | Example |
-|------|-------------|---------|
-| `CH<N>` | Channel number | `CH1`, `CH2`, `CH3` |
-| `_` | Underscore separator | |
-| `<parameter>` | Parameter name | `status`, `time`, `ramp` |
-| `_<unit>` | Optional time unit | `_s`, `_ms`, `_min` |
+| Part          | Description          | Example                  |
+| ------------- | -------------------- | ------------------------ |
+| `CH<N>`       | Channel number       | `CH1`, `CH2`, `CH3`      |
+| `_`           | Underscore separator |                          |
+| `<parameter>` | Parameter name       | `status`, `time`, `ramp` |
+| `_<unit>`     | Optional time unit   | `_s`, `_ms`, `_min`      |
 
 **Examples:**
 ```
@@ -444,12 +547,12 @@ CH1_ramp          ← Channel 1, ramp specification
 
 **Apply to column names only:**
 
-| Suffix | Unit | Example Column | Value `10` means |
-|--------|------|----------------|------------------|
-| `_ms`, `_msec` | Milliseconds | `CH1_time_ms` | 10 ms |
-| `_s`, `_sec` | Seconds | `CH1_time_sec` | 10 seconds |
-| `_m`, `_min` | Minutes | `CH1_time_min` | 10 minutes |
-| `_h`, `_hr` | Hours | `CH1_time_hr` | 10 hours |
+| Suffix         | Unit         | Example Column | Value `10` means |
+| -------------- | ------------ | -------------- | ---------------- |
+| `_ms`, `_msec` | Milliseconds | `CH1_time_ms`  | 10 ms            |
+| `_s`, `_sec`   | Seconds      | `CH1_time_sec` | 10 seconds       |
+| `_m`, `_min`   | Minutes      | `CH1_time_min` | 10 minutes       |
+| `_h`, `_hr`    | Hours        | `CH1_time_hr`  | 10 hours         |
 
 **Column name synonyms (all equivalent):**
 ```
@@ -468,11 +571,11 @@ CH1_time_ms = CH1_time_msec = CH1_time_millisecond = CH1_time_milliseconds
 **Syntax:** `(L:<start>,<end>,<duration>)`
 
 **Parameters:**
-| Name | Type | Range | Description |
-|------|------|-------|-------------|
-| start | int | 0-255 | Starting PWM |
-| end | int | 0-255 | Ending PWM |
-| duration | int | >0 | Duration in ms |
+| Name     | Type | Range | Description    |
+| -------- | ---- | ----- | -------------- |
+| start    | int  | 0-255 | Starting PWM   |
+| end      | int  | 0-255 | Ending PWM     |
+| duration | int  | >0    | Duration in ms |
 
 **Examples:**
 ```txt
@@ -525,13 +628,13 @@ CH1_time_ms = CH1_time_msec = CH1_time_millisecond = CH1_time_milliseconds
 **⚠️ IMPORTANT:** In X mode, `start` and `end` PWM values are **IGNORED**! Output is `255 * f(t)`.
 
 **t-Range → Output:**
-| t_start | t_end | f(t) range | PWM output |
-|---------|-------|------------|------------|
-| 0 | 1 | 0 → 1 | 0 → 255 |
-| 1 | 2 | 1 → 0 | 255 → 0 |
-| 0 | 2 | 0 → 1 → 0 | 0 → 255 → 0 (breathing) |
-| 0 | 0.5 | 0 → 0.5 | 0 → 127.5 |
-| 0.5 | 1 | 0.5 → 1 | 127.5 → 255 |
+| t_start | t_end | f(t) range | PWM output              |
+| ------- | ----- | ---------- | ----------------------- |
+| 0       | 1     | 0 → 1      | 0 → 255                 |
+| 1       | 2     | 1 → 0      | 255 → 0                 |
+| 0       | 2     | 0 → 1 → 0  | 0 → 255 → 0 (breathing) |
+| 0       | 0.5   | 0 → 0.5    | 0 → 127.5               |
+| 0.5     | 1     | 0.5 → 1    | 127.5 → 255             |
 
 **Examples:**
 ```txt
@@ -545,14 +648,14 @@ CH1_time_ms = CH1_time_msec = CH1_time_millisecond = CH1_time_milliseconds
 **Syntax:** `(F:<func_name>,<duration>)`
 
 **Built-in Functions:**
-| Name | Description |
-|------|-------------|
-| `heartbeat` | Double-pulse heartbeat |
-| `bounce` | Bounce effect |
-| `sine_wave` | Full sine wave |
-| `sawtooth` | Linear ramp up, instant drop |
-| `triangle` | Linear ramp up and down |
-| `myfunc` | User-defined placeholder |
+| Name        | Description                  |
+| ----------- | ---------------------------- |
+| `heartbeat` | Double-pulse heartbeat       |
+| `bounce`    | Bounce effect                |
+| `sine_wave` | Full sine wave               |
+| `sawtooth`  | Linear ramp up, instant drop |
+| `triangle`  | Linear ramp up and down      |
+| `myfunc`    | User-defined placeholder     |
 
 **Examples:**
 ```txt
@@ -569,40 +672,40 @@ See [F_MODE_CUSTOM_FUNCTIONS.md](F_MODE_CUSTOM_FUNCTIONS.md) for custom function
 
 ### Pattern Command Placeholders
 
-| Placeholder | Description | Valid Values | Default |
-|-------------|-------------|--------------|---------|
-| `<id>` | Pattern number | 1, 2, 3, ... | N/A |
-| `<channel>` | Channel number | 1, 2, 3, ... | N/A |
-| `<states>` | PWM values | 0-255, comma-separated | N/A |
-| `<durations>` | Time values | Positive integers/floats | N/A |
-| `<count>` | Repeat count | ≥1 integer | N/A |
+| Placeholder   | Description    | Valid Values             | Default |
+| ------------- | -------------- | ------------------------ | ------- |
+| `<id>`        | Pattern number | 1, 2, 3, ...             | N/A     |
+| `<channel>`   | Channel number | 1, 2, 3, ...             | N/A     |
+| `<states>`    | PWM values     | 0-255, comma-separated   | N/A     |
+| `<durations>` | Time values    | Positive integers/floats | N/A     |
+| `<count>`     | Repeat count   | ≥1 integer               | N/A     |
 
 ### RAMP Placeholders
 
-| Placeholder | Description | Valid Values |
-|-------------|-------------|--------------|
-| `<mode>` | Easing mode | L, C, I, O, X, F |
-| `<start>` | Start PWM | 0-255 |
-| `<end>` | End PWM | 0-255 |
-| `<duration>` | Duration (ms) | >0 integer |
-| `<t_start>` | t range start | 0.0-2.0 float |
-| `<t_end>` | t range end | 0.0-2.0 float |
+| Placeholder   | Description   | Valid Values            |
+| ------------- | ------------- | ----------------------- |
+| `<mode>`      | Easing mode   | L, C, I, O, X, F        |
+| `<start>`     | Start PWM     | 0-255                   |
+| `<end>`       | End PWM       | 0-255                   |
+| `<duration>`  | Duration (ms) | >0 integer              |
+| `<t_start>`   | t range start | 0.0-2.0 float           |
+| `<t_end>`     | t range end   | 0.0-2.0 float           |
 | `<func_name>` | Function name | heartbeat, bounce, etc. |
 
 ### Time Placeholders
 
-| Placeholder | Description | Examples |
-|-------------|-------------|----------|
-| `<time>` | Time of day | '21:00', '14:30:45' |
-| `<datetime>` | Full date+time | '2025-01-15 21:00:00' |
-| `<countdown>` | Seconds from now | 120, 30.5 |
+| Placeholder   | Description      | Examples              |
+| ------------- | ---------------- | --------------------- |
+| `<time>`      | Time of day      | '21:00', '14:30:45'   |
+| `<datetime>`  | Full date+time   | '2025-01-15 21:00:00' |
+| `<countdown>` | Seconds from now | 120, 30.5             |
 
 ### Pulse Placeholders
 
-| Placeholder | Description | Valid Values |
-|-------------|-------------|--------------|
-| `<period>` | Pulse period (ms) | 100-60000 |
-| `<pw>` | Pulse width (ms) | 1 to period |
+| Placeholder | Description       | Valid Values |
+| ----------- | ----------------- | ------------ |
+| `<period>`  | Pulse period (ms) | 100-60000    |
+| `<pw>`      | Pulse width (ms)  | 1 to period  |
 
 ---
 
@@ -694,27 +797,27 @@ CALIBRATION_FACTOR: 1.00131
 
 ### Punctuation Summary
 
-| Symbol | Name | Usage |
-|--------|------|-------|
-| `;` | Semicolon | Field separator in PATTERN |
-| `:` | Colon | Key-value separator |
-| `,` | Comma | Value list separator |
-| `()` | Parentheses | RAMP segment wrapper |
-| `\|` | Pipe | t-range separator in X mode |
-| `{}` | Curly braces | Dictionary block |
-| `'` | Single quote | String key/value |
-| `#` | Hash | Comment marker |
+| Symbol | Name         | Usage                       |
+| ------ | ------------ | --------------------------- |
+| `;`    | Semicolon    | Field separator in PATTERN  |
+| `:`    | Colon        | Key-value separator         |
+| `,`    | Comma        | Value list separator        |
+| `()`   | Parentheses  | RAMP segment wrapper        |
+| `\|`   | Pipe         | t-range separator in X mode |
+| `{}`   | Curly braces | Dictionary block            |
+| `'`    | Single quote | String key/value            |
+| `#`    | Hash         | Comment marker              |
 
 ### Mode Quick Reference
 
-| Mode | Syntax | Curve Shape |
-|------|--------|-------------|
-| L | `(L:start,end,dur)` | Straight line |
-| C | `(C:start,end,dur)` | S-curve (full cosine) |
-| I | `(I:start,end,dur)` | Slow start, fast end |
-| O | `(O:start,end,dur)` | Fast start, slow end |
-| X | `(X:_,_,dur\|t0,t1)` | Custom cosine range |
-| F | `(F:name,dur)` | Custom function |
+| Mode | Syntax               | Curve Shape           |
+| ---- | -------------------- | --------------------- |
+| L    | `(L:start,end,dur)`  | Straight line         |
+| C    | `(C:start,end,dur)`  | S-curve (full cosine) |
+| I    | `(I:start,end,dur)`  | Slow start, fast end  |
+| O    | `(O:start,end,dur)`  | Fast start, slow end  |
+| X    | `(X:_,_,dur\|t0,t1)` | Custom cosine range   |
+| F    | `(F:name,dur)`       | Custom function       |
 
 ---
 
@@ -724,13 +827,77 @@ CALIBRATION_FACTOR: 1.00131
 - [PWM_RAMP_CONTROL.md](PWM_RAMP_CONTROL.md) - Easing and ramp details
 - [F_MODE_CUSTOM_FUNCTIONS.md](F_MODE_CUSTOM_FUNCTIONS.md) - Custom function guide
 
+---
+
+## Syntax Validation
+
+### Using syntax_check.py
+
+Before running a protocol, validate it using the syntax checker:
+
+```bash
+# Basic validation
+python syntax_check.py examples/1min_test.txt
+
+# Strict mode (warnings = errors)
+python syntax_check.py protocol.txt --strict
+
+# Check multiple files
+python syntax_check.py examples/*.txt
+
+# Quiet mode (errors only)
+python syntax_check.py protocol.txt --quiet
+```
+
+### Error Detection
+
+The syntax checker validates:
+
+| Check                 | Description                                      |
+| --------------------- | ------------------------------------------------ |
+| **Field names**       | Detects typos like `PATERN` → suggests `PATTERN` |
+| **Required fields**   | Ensures PATTERN, CH, REPEATS present             |
+| **RAMP syntax**       | Validates mode, parameters, t-range              |
+| **PULSE format**      | Validates `T<period>pw<width>` format            |
+| **Dictionary blocks** | START_TIME, WAIT_STATUS, WAIT_PULSE              |
+| **Channel names**     | Validates CH1, CH2 format                        |
+| **Value ranges**      | Warns for unusual values                         |
+
+### Fuzzy Matching
+
+The checker provides correction suggestions for typos:
+
+```
+Line 4 - Unknown command or block
+  Content: PATERN:1;CH:1;STATUS:255,0;TIME_MS:1000,1000;REPEATS:5
+  Did you mean:
+    • PATTERN
+```
+
+### Programmatic Usage
+
+```python
+from syntax_check import check_protocol, ProtocolSyntaxChecker
+
+# Simple check
+is_valid, errors, warnings = check_protocol('protocol.txt')
+
+# With checker instance
+checker = ProtocolSyntaxChecker(strict_mode=True)
+is_valid, errors, warnings = checker.check_file('protocol.txt')
+
+# Check string content
+is_valid, errors, warnings = checker.check_string(protocol_content)
+```
+
 ### Valid Protocol Examples
 
-| Folder | Description | Calibration |
-|--------|-------------|-------------|
-| [auto_calibration/](../examples/auto_calibration/) | **Recommended** - Modern protocols | Automatic |
-| [preset_calibration/](../examples/preset_calibration/) | Legacy protocols with manual factor | Manual |
+| Folder                                                 | Description                         | Calibration |
+| ------------------------------------------------------ | ----------------------------------- | ----------- |
+| [auto_calibration/](../examples/auto_calibration/)     | **Recommended** - Modern protocols  | Automatic   |
+| [preset_calibration/](../examples/preset_calibration/) | Legacy protocols with manual factor | Manual      |
+| [ramp_easing/](../examples/ramp_easing/)               | RAMP mode demonstrations            | Various     |
 
 ---
 
-*Last Updated: December 2025 | Light Controller v2.3.0*
+*Last Updated: January 2025 | Light Controller v2.3.0*

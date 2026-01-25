@@ -21,9 +21,160 @@ from collections import defaultdict
 # PWM/Intensity Conversion Utilities
 # ============================================================================
 
+# Channel output type constants (must match Arduino definitions)
+OUTPUT_TYPE_PWM = 'P'       # 8-bit PWM (0-255)
+OUTPUT_TYPE_DAC = 'D'       # 12-bit Native DAC (0-4095)
+OUTPUT_TYPE_MCP4728 = 'M'   # 12-bit MCP4728 DAC (0-4095)
+OUTPUT_TYPE_BINARY = 'B'    # Binary (0 or 1)
+
+# Resolution constants
+RESOLUTION_BINARY = 1       # 0 or 1
+RESOLUTION_8BIT = 255       # 0-255
+RESOLUTION_12BIT = 4095     # 0-4095
+
+
+def get_max_value_for_type(channel_type):
+    """
+    Get the maximum value for a channel type.
+    
+    Args:
+        channel_type: 'P' (PWM), 'D' (DAC), 'M' (MCP4728), 'B' (Binary)
+        
+    Returns:
+        int: Maximum value (1, 255, or 4095)
+    """
+    type_map = {
+        OUTPUT_TYPE_BINARY: RESOLUTION_BINARY,
+        OUTPUT_TYPE_PWM: RESOLUTION_8BIT,
+        OUTPUT_TYPE_DAC: RESOLUTION_12BIT,
+        OUTPUT_TYPE_MCP4728: RESOLUTION_12BIT,
+    }
+    return type_map.get(channel_type, RESOLUTION_8BIT)
+
+
+def is_12bit_channel(channel_type):
+    """Check if a channel type uses 12-bit resolution."""
+    return channel_type in (OUTPUT_TYPE_DAC, OUTPUT_TYPE_MCP4728)
+
+
+def convert_status_to_channel_value(value, channel_type='P', channel_num=None, warnings=None):
+    """
+    Convert a status value for a channel type with strict validation (NO SCALING).
+    
+    Value interpretation rules:
+    - Float 0.0-1.0 (normalized): Scales to channel's max value
+    - Integer 0-255: Passed through as-is (warns if used on 12-bit channel)
+    - Integer 256-4095: Passed through if 12-bit; CAPPED to 255 if 8-bit (with warning)
+    - Integer >4095: CAPPED to channel max (with warning)
+    - Decimal on Binary channel: ERROR
+    - String 'ramp': Special marker for RAMP patterns
+    
+    Args:
+        value: Status value (float, int, or 'ramp')
+        channel_type: 'P' (PWM/8-bit), 'D' (DAC/12-bit), 'M' (MCP4728/12-bit), 'B' (Binary)
+        channel_num: Optional channel number for error messages
+        warnings: Optional list to collect warning messages
+        
+    Returns:
+        int: Value (possibly capped), or 'ramp' string
+        
+    Raises:
+        ValueError: If value is invalid (decimal on binary, non-normalized decimal, etc.)
+    """
+    max_val = get_max_value_for_type(channel_type)
+    ch_str = f"CH{channel_num}" if channel_num else "channel"
+    is_12bit = is_12bit_channel(channel_type)
+    
+    if warnings is None:
+        warnings = []  # Local collection if not provided
+    
+    def add_warning(msg):
+        import warnings as warn_module
+        warnings.append(msg)
+        warn_module.warn(msg, UserWarning, stacklevel=3)
+    
+    if isinstance(value, str):
+        if value.lower() == 'ramp':
+            return 'ramp'
+        try:
+            has_decimal = '.' in value
+            value = float(value)
+        except ValueError:
+            raise ValueError(f"Invalid status value: {value}")
+    else:
+        has_decimal = isinstance(value, float) and (value % 1 != 0 or '.' in str(value))
+    
+    # Convert numpy types to native Python types
+    if isinstance(value, (np.integer,)):
+        value = int(value)
+        has_decimal = False
+    elif isinstance(value, (np.floating,)):
+        has_decimal = (value % 1 != 0)
+        value = float(value)
+    
+    # Binary channel validation
+    if channel_type == OUTPUT_TYPE_BINARY:
+        if has_decimal and not (value == 0.0 or value == 1.0):
+            raise ValueError(
+                f"{ch_str}: Decimal values not allowed for binary channel. "
+                f"Got {value}. Use 0 or 1 only."
+            )
+        return 1 if value > 0 else 0
+    
+    if isinstance(value, float):
+        # Normalized value (0.0-1.0) - scale to channel max
+        if has_decimal and 0.0 <= value <= 1.0:
+            return int(round(value * max_val))
+        
+        # Decimal not in 0-1 range - ERROR
+        if has_decimal:
+            raise ValueError(
+                f"{ch_str}: Decimal values must be normalized (0.0-1.0). "
+                f"Got {value}. Use integers for absolute values."
+            )
+    
+    # Integer values (no decimal)
+    int_value = int(value)
+    
+    # Special case: integer 0 or 1 treated as binary (OFF/ON → 0/max)
+    # This ensures backward compatibility with protocols using 0,1 for OFF/ON
+    if int_value == 0:
+        return 0
+    if int_value == 1:
+        # Integer 1 means "full ON" (same as 1.0 normalized)
+        return max_val
+    
+    # 8-bit range (2-255)
+    if int_value <= 255:
+        if is_12bit and int_value > 1:
+            add_warning(
+                f"{ch_str}: 8-bit value {int_value} used on 12-bit channel "
+                f"(kept as {int_value}, not scaled). Use 0-4095 or 0.0-1.0 for full range."
+            )
+        return int_value
+    
+    # 12-bit range (256-4095)
+    if int_value <= 4095:
+        if not is_12bit:
+            add_warning(
+                f"{ch_str}: Value {int_value} exceeds 8-bit max, capped to 255."
+            )
+            return 255
+        return int_value
+    
+    # Value > 4095: cap with warning
+    add_warning(
+        f"{ch_str}: Value {int_value} exceeds max, capped to {max_val}."
+    )
+    return max_val
+
+
 def convert_status_to_pwm(value):
     """
     Convert a status value to PWM byte (0-255).
+    
+    Legacy function - maintained for backward compatibility.
+    For new code, use convert_status_to_channel_value() with channel_type.
     
     Supports:
     - Float 0.0-1.0: Converted to 0-255
@@ -37,36 +188,7 @@ def convert_status_to_pwm(value):
     Returns:
         int: PWM value 0-255, or 'ramp' string
     """
-    if isinstance(value, str):
-        if value.lower() == 'ramp':
-            return 'ramp'
-        try:
-            value = float(value)
-        except ValueError:
-            raise ValueError(f"Invalid status value: {value}")
-    
-    if isinstance(value, float):
-        if 0.0 <= value <= 1.0:
-            # Float in range 0-1: convert to 0-255
-            return int(round(value * 255))
-        elif 1.0 < value <= 255.0:
-            # Float > 1 but <= 255: treat as direct PWM
-            return int(round(value))
-        else:
-            raise ValueError(f"Status value {value} out of range. Expected 0.0-1.0 or 0-255")
-    
-    if isinstance(value, (int, np.integer)):
-        if value == 0:
-            return 0
-        elif value == 1:
-            # Legacy binary 1 -> full brightness
-            return 255
-        elif 0 <= value <= 255:
-            return int(value)
-        else:
-            raise ValueError(f"Status value {value} out of range. Expected 0-255")
-    
-    raise ValueError(f"Unsupported status type: {type(value)}")
+    return convert_status_to_channel_value(value, channel_type=OUTPUT_TYPE_PWM)
 
 
 def parse_ramp_specification(ramp_str):
@@ -127,6 +249,92 @@ def parse_ramp_specification(ramp_str):
         't_start': t_start,
         't_end': t_end
     }
+
+
+def validate_protocol_values(protocol_data, arduino_config, raise_errors=True):
+    """
+    Validate protocol status values against Arduino channel configuration.
+    
+    Checks that all status values in the protocol are within valid ranges
+    for each channel's output type.
+    
+    Args:
+        protocol_data: Dict containing protocol information with pattern data
+        arduino_config: Dict from Greet() containing channel_types and channel_max_values
+        raise_errors: If True, raise ValueError on mismatch. If False, return list of warnings.
+        
+    Returns:
+        list: List of warning/error messages (empty if all OK)
+        
+    Raises:
+        ValueError: If raise_errors=True and mismatches are found
+    """
+    issues = []
+    
+    if 'channel_types' not in arduino_config:
+        issues.append("Warning: Arduino did not report channel types. Skipping validation.")
+        return issues
+    
+    channel_types = arduino_config.get('channel_types', '')
+    channel_max_values = arduino_config.get('channel_max_values', [255] * len(channel_types))
+    
+    # Check protocol data structure
+    # This would need to be adapted based on your actual protocol data structure
+    # For now, provide a general framework
+    
+    for ch_idx, ch_type in enumerate(channel_types):
+        max_val = channel_max_values[ch_idx] if ch_idx < len(channel_max_values) else 255
+        ch_num = ch_idx + 1  # 1-based channel number
+        
+        # Get type description
+        type_desc = {
+            'P': f'PWM (0-255)',
+            'D': f'DAC (0-4095)',
+            'M': f'MCP4728 (0-4095)',
+            'B': f'Binary (0-1)'
+        }.get(ch_type, f'Unknown ({ch_type})')
+        
+        # Protocol values would be validated here
+        # This is a framework - actual implementation depends on protocol_data structure
+    
+    if issues and raise_errors:
+        error_msg = "Protocol validation failed:\n" + "\n".join(f"  - {issue}" for issue in issues)
+        raise ValueError(error_msg)
+    
+    return issues
+
+
+def get_channel_info_string(arduino_config):
+    """
+    Generate a human-readable string describing channel configuration.
+    
+    Args:
+        arduino_config: Dict from Greet() containing channel info
+        
+    Returns:
+        str: Formatted channel information string
+    """
+    if 'channel_types' not in arduino_config:
+        return "Channel information not available (old firmware?)"
+    
+    lines = ["Channel Configuration:"]
+    channel_types = arduino_config.get('channel_types', '')
+    channel_max_values = arduino_config.get('channel_max_values', [255] * len(channel_types))
+    
+    type_names = {
+        'P': 'PWM',
+        'D': 'Native DAC',
+        'M': 'MCP4728',
+        'B': 'Binary'
+    }
+    
+    for i, ch_type in enumerate(channel_types):
+        max_val = channel_max_values[i] if i < len(channel_max_values) else 255
+        type_name = type_names.get(ch_type, f'Unknown({ch_type})')
+        bits = {1: '1-bit', 255: '8-bit', 4095: '12-bit'}.get(max_val, f'{max_val}-max')
+        lines.append(f"  CH{i+1}: {type_name} ({bits})")
+    
+    return "\n".join(lines)
 
 
 # Easing mode constants (must match Arduino definitions)
@@ -540,7 +748,14 @@ def SetUpSerialPort(board_type='Arduino Uno', port=None, **kwargs):
                 
     if port_num == 1:
         print('\n{} is found on {}'.format(board_type,Port))
-        answer = input('\nDo you confirm using this port? (Y/n): ')
+        
+        # Auto-confirm if LIGHT_CONTROLLER_AUTO_CONFIRM is set
+        auto_confirm = os.environ.get('LIGHT_CONTROLLER_AUTO_CONFIRM', '0') == '1'
+        if auto_confirm:
+            print('\n[Auto-confirming port selection]')
+            answer = 'y'
+        else:
+            answer = input('\nDo you confirm using this port? (Y/n): ')
         if not (answer == 'Y' or answer == 'y'):
             raise ValueError('Port is not confirmed.')
         print('\nBuilding serial connection...')
@@ -1797,7 +2012,17 @@ def SendGreeting(ser, time_out=10, expected_pattern_length=None, expected_max_ra
         expected_max_ramp_segments: Expected MAX_RAMP_SEGMENTS value (for verification)
         
     Returns:
-        dict: Arduino configuration {'pattern_length': int, 'max_pattern_num': int, 'max_channel_num': int, ...}
+        dict: Arduino configuration with keys:
+            - pattern_length: int
+            - max_pattern_num: int
+            - max_channel_num: int
+            - max_ramp_segments: int
+            - pulse_mode: bool
+            - pwm_ramp_mode: bool
+            - mcp4728: bool (MCP4728 DAC initialized)
+            - native_dac: int (number of native DAC channels)
+            - channel_types: str (e.g., "PPMM" for 4 channels)
+            - channel_max_values: list[int] (max value per channel)
     """
     # Clear any residual data in buffer before greeting (important for Arduino Due)
     ser.reset_input_buffer()
@@ -1814,7 +2039,7 @@ def SendGreeting(ser, time_out=10, expected_pattern_length=None, expected_max_ra
         if ser.inWaiting() > 0:
             fb = ser.readline().decode('utf-8').strip()
             
-            # Parse new format: "Salve;PATTERN_LENGTH:4;MAX_PATTERN_NUM:10;MAX_CHANNEL_NUM:8"
+            # Parse new format: "Salve;PATTERN_LENGTH:4;...;CH_TYPES:PPMM;CH_MAX:255,255,4095,4095"
             if fb.startswith('Salve'):
                 print('Arduino: Salve!')
                 
@@ -1824,16 +2049,53 @@ def SendGreeting(ser, time_out=10, expected_pattern_length=None, expected_max_ra
                     if ':' in part:
                         key, value = part.split(':', 1)
                         key = key.strip().lower()
-                        try:
-                            arduino_config[key] = int(value.strip())
-                        except ValueError:
-                            print(f'\033[33mWarning: Could not parse {key}={value}\033[0m')
+                        value = value.strip()
+                        
+                        # Handle special fields
+                        if key == 'ch_types':
+                            # Channel types string (e.g., "PPMM")
+                            arduino_config['channel_types'] = value
+                        elif key == 'ch_max':
+                            # Channel max values (e.g., "255,255,4095,4095")
+                            arduino_config['channel_max_values'] = [int(v) for v in value.split(',')]
+                        elif key in ('pulse_mode', 'pwm_ramp_mode', 'mcp4728'):
+                            # Boolean flags
+                            arduino_config[key] = (value == '1')
+                        elif key == 'native_dac':
+                            # Number of native DAC channels
+                            arduino_config[key] = int(value)
+                        else:
+                            # Numeric values
+                            try:
+                                arduino_config[key] = int(value)
+                            except ValueError:
+                                arduino_config[key] = value
+                                print(f'\033[33mWarning: Could not parse {key}={value} as integer\033[0m')
                 
                 # Display configuration
                 if arduino_config:
                     print(f'Arduino Configuration:')
                     for key, val in arduino_config.items():
-                        print(f'  {key.upper()}: {val}')
+                        if key == 'channel_types':
+                            print(f'  CHANNEL_TYPES: {val}')
+                            # Display per-channel info
+                            for i, ch_type in enumerate(val):
+                                type_name = {
+                                    'P': 'PWM (8-bit)',
+                                    'D': 'Native DAC (12-bit)',
+                                    'M': 'MCP4728 DAC (12-bit)',
+                                    'B': 'Binary (on/off)'
+                                }.get(ch_type, f'Unknown ({ch_type})')
+                                max_val = arduino_config.get('channel_max_values', [255]*len(val))[i]
+                                print(f'    CH{i+1}: {type_name}, max={max_val}')
+                        elif key == 'channel_max_values':
+                            pass  # Already displayed with channel_types
+                        elif key == 'mcp4728':
+                            print(f'  MCP4728_DAC: {"Initialized" if val else "Not available"}')
+                        elif key == 'native_dac':
+                            print(f'  NATIVE_DAC: {val} channel(s)')
+                        else:
+                            print(f'  {key.upper()}: {val}')
                     
                     # Verify PATTERN_LENGTH if specified
                     if expected_pattern_length is not None and 'pattern_length' in arduino_config:
@@ -2014,6 +2276,70 @@ def CheckPulseModeCompatibility(ser, protocol_requires_pulse, time_out=5):
         # Perfect match
         print(f'   ✓ Compatible')
         return True
+
+
+def SetMonitorStep(ser, step_ms=100, timeout=2):
+    """
+    Set the Arduino monitor print step interval.
+    
+    Args:
+        ser: Serial connection to Arduino
+        step_ms: Print interval in milliseconds (10-10000, default 100)
+        timeout: Response timeout in seconds
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    command = f'MONITOR_STEP:{step_ms}\n'
+    ser.write(command.encode('utf-8'))
+    
+    t_start = time.time()
+    while time.time() - t_start < timeout:
+        if ser.inWaiting() > 0:
+            response = ser.readline().decode('utf-8').strip()
+            if response.startswith('MONITOR_STEP:'):
+                confirmed_step = int(response.split(':')[1])
+                print(f'   Monitor print step set to {confirmed_step}ms')
+                return True
+            elif 'Invalid' in response:
+                print(f'   Warning: {response}')
+                return False
+    print(f'   Warning: No response to MONITOR_STEP command')
+    return False
+
+
+def SetMonitorEnabled(ser, enabled=True, timeout=2):
+    """
+    Enable or disable Arduino real-time channel monitoring.
+    
+    When disabled, Arduino will not print $CHMON messages, reducing
+    serial traffic and allowing cleaner non-monitored operation.
+    
+    Args:
+        ser: Serial connection to Arduino
+        enabled: True to enable monitoring, False to disable
+        timeout: Response timeout in seconds
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    command = f'MONITOR_ENABLE:{1 if enabled else 0}\n'
+    ser.write(command.encode('utf-8'))
+    
+    t_start = time.time()
+    while time.time() - t_start < timeout:
+        if ser.inWaiting() > 0:
+            response = ser.readline().decode('utf-8').strip()
+            if response.startswith('MONITOR_ENABLE:'):
+                status = response.split(':')[1]
+                print(f'   Monitor {"enabled" if status == "1" else "disabled"}')
+                return True
+            elif 'ERR' in response:
+                print(f'   Warning: {response}')
+                return False
+    print(f'   Warning: No response to MONITOR_ENABLE command')
+    return False
+
 
 def SayBye(ser, time_out=5):
     bye = 'Bye\n'
@@ -2610,13 +2936,16 @@ def auto_calibrate_arduino(ser, method='v2', force_recalibrate=False, db_path='c
     
     if existing_calib and not force_recalibrate:
         # Valid calibration found (< 90 days old)
-        # Auto-confirm if running non-interactively (check for stdin availability)
+        # Auto-confirm if running non-interactively or if LIGHT_CONTROLLER_AUTO_CONFIRM is set
         import sys
-        if sys.stdin.isatty():
+        import os
+        auto_confirm = os.environ.get('LIGHT_CONTROLLER_AUTO_CONFIRM', '0') == '1'
+        
+        if sys.stdin.isatty() and not auto_confirm:
             response = input('\nUse existing calibration? (Y/recalibrate) [Y]: ').strip().lower()
         else:
-            response = 'y'  # Auto-confirm in non-interactive mode
-            print('\n[Non-interactive mode: auto-confirming existing calibration]')
+            response = 'y'  # Auto-confirm in non-interactive mode or when flag is set
+            print('\n[Auto-confirming existing calibration]')
         
         if response == 'recalibrate' or response == 'r':
             print('\nPerforming new calibration...')
@@ -3094,7 +3423,7 @@ def ReadTxtFile(file_path):
     '''
     Read the protocol file in TXT format
     file_path: path to the TXT file
-    return -> list of pattern commands, start_time dict, wait_status dict, wait_pulse dict, calibration factor
+    return -> list of pattern commands, start_time dict, wait_status dict, wait_pulse dict, loop dict, calibration factor
     
     Commands can include PULSE parameter in format: PULSE:T[period]pw[width],T[period]pw[width]
     Period is in milliseconds, pulse_width is in milliseconds.
@@ -3105,6 +3434,7 @@ def ReadTxtFile(file_path):
     - START_TIME: dictionary {channel_name: time_value or countdown_seconds}
     - WAIT_STATUS: dictionary {channel_name: 0 or 1}
     - WAIT_PULSE: dictionary {channel_name: {'period': int, 'pw': int}}
+    - LOOP: dictionary {channel_name: 0 or 1} - if 1, channel loops indefinitely
     - CALIBRATION_FACTOR: float value
     - Comments: lines starting with # are ignored
     - Empty lines are ignored
@@ -3118,6 +3448,7 @@ def ReadTxtFile(file_path):
     start_time = {}
     wait_status = {}
     wait_pulse = {}
+    loop = {}
     calib_factor = None
     
     i = 0
@@ -3267,6 +3598,32 @@ def ReadTxtFile(file_path):
             else:
                 calib_factor = None
             i += 1
+        elif line.startswith('LOOP:'):
+            # Collect all lines until we have a complete dictionary
+            loop_lines = []
+            loop_lines.append(line)
+            i += 1
+            # Check if the dictionary is complete
+            complete = line.count('{') == line.count('}')
+            while i < len(lines) and not complete:
+                loop_lines.append(lines[i])
+                complete = ''.join(loop_lines).count('{') == ''.join(loop_lines).count('}')
+                i += 1
+            
+            # Parse the complete LOOP
+            loop_str = ''.join(loop_lines)
+            loop_str = loop_str.split('LOOP:', 1)[1].strip()
+            
+            try:
+                loop_dict = ast.literal_eval(loop_str)
+                for ch, loop_value in loop_dict.items():
+                    if loop_value is None:
+                        loop[ch] = 0
+                    else:
+                        loop[ch] = int(bool(loop_value))
+            except (ValueError, SyntaxError) as e:
+                print(f"Warning: Could not parse LOOP: {e}")
+                print(f"LOOP string: {loop_str}")
         else:
             i += 1
     
@@ -3287,7 +3644,12 @@ def ReadTxtFile(file_path):
         for ch in start_time.keys():
             wait_status[ch] = 0  # Default wait status
     
-    return pattern_commands, start_time, wait_status, wait_pulse, calib_factor
+    # Set default loop to 0 (no loop) for all channels that don't have explicit loop setting
+    for ch in start_time.keys():
+        if ch not in loop:
+            loop[ch] = 0  # Default: don't loop
+    
+    return pattern_commands, start_time, wait_status, wait_pulse, loop, calib_factor
 
 def ValidatePulseFormat(cmd_string, line_num=None):
     '''
