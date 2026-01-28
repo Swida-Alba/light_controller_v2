@@ -217,6 +217,46 @@ def parse_commands(commands_file):
     return channels, calib_factor, loop_channels, channel_types
 
 
+def convert_binary_to_intensity(value, ch_max):
+    """
+    Convert a status value to actual intensity, treating integer 0/1 as binary HIGH/LOW.
+    
+    This matches the Arduino firmware behavior where:
+    - Integer 0 = OFF (value 0)
+    - Integer 1 = ON (full intensity = ch_max: 255 for PWM, 4095 for DAC)
+    - Float 0.0-1.0 = Normalized (scaled to ch_max)
+    - Integer 2-255 or 2-4095 = Actual intensity value
+    
+    Args:
+        value: Raw status value (int or float)
+        ch_max: Maximum value for the channel (255 for PWM, 4095 for DAC)
+    
+    Returns:
+        int: Actual intensity value (0 to ch_max)
+    """
+    # Normalized float (0.0-1.0) with decimal point - scale to max
+    if isinstance(value, float) and 0.0 <= value <= 1.0:
+        # Check if it's truly normalized (has fractional part or is exactly 0.0/1.0)
+        if value == 0.0:
+            return 0
+        elif value == 1.0:
+            return ch_max
+        else:  # Has fractional part like 0.5
+            return int(round(value * ch_max))
+    
+    # Integer values
+    int_value = int(value)
+    
+    # Binary HIGH/LOW: integer 0 or 1
+    if int_value == 0:
+        return 0
+    if int_value == 1:
+        return ch_max  # Full intensity
+    
+    # Actual intensity value (2 and above)
+    return min(int_value, ch_max)
+
+
 def get_channel_max_value(ch_num, channel_types):
     """
     Get the maximum value for a channel based on its type.
@@ -521,12 +561,17 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
             pulse_str = pattern.get('pulse', None)
             
             if pattern.get('is_ramp') and pattern.get('ramp_segments'):
-                # RAMP patterns: Use actual values (0-255 for PWM, 0-4095 for DAC)
+                # RAMP patterns: Convert values treating integer 0/1 as binary HIGH/LOW
                 for _ in range(repeats):
                     for seg in pattern['ramp_segments']:
+                        start_val = seg.get('start_pwm', seg.get('start', 0))
+                        end_val = seg.get('end_pwm', seg.get('end', 255))
+                        # Convert binary 0/1 to actual intensity
+                        start_val = convert_binary_to_intensity(start_val, ch_max)
+                        end_val = convert_binary_to_intensity(end_val, ch_max)
                         segments.append({
-                            'start': seg.get('start_pwm', seg.get('start', 0)),
-                            'end': seg.get('end_pwm', seg.get('end', 255)),
+                            'start': start_val,
+                            'end': end_val,
                             'duration': seg.get('duration_ms', seg.get('duration', 1000)),
                             'mode': seg.get('mode', 'L'),
                             't_start': seg.get('t_start', 0),
@@ -554,12 +599,11 @@ def generate_html(channels, positions, output_file, upload_time=None, channel_st
                 
                 for _ in range(repeats):
                     for i, (status, time_ms) in enumerate(zip(pattern.get('status', [0]), pattern.get('time_ms_original', [1000]))):
-                        # Convert normalized values (0.0-1.0) to channel's actual range
-                        # e.g., 0.2 on MCP4728 channel -> 819 (0.2 * 4095)
-                        if isinstance(status, float) and 0.0 <= status <= 1.0 and status not in (0, 1):
-                            value = int(round(status * ch_max))
-                        else:
-                            value = status
+                        # Convert status to actual intensity value
+                        # Integer 0/1 treated as binary HIGH/LOW (0/max)
+                        # Float 0.0-1.0 treated as normalized (scaled to max)
+                        # Integer 2+ treated as actual intensity
+                        value = convert_binary_to_intensity(status, ch_max)
                         
                         # Check if this status has pulse
                         pulse_param = pulse_params[i] if i < len(pulse_params) else None

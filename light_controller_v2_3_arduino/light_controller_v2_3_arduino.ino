@@ -31,7 +31,7 @@ const int MAX_PATTERN_NUM = 10;             //* Max patterns per channel
 const int PATTERN_LENGTH = 4;               //* Max steps per pattern
 
 //* Channel pin assignments (type auto-detected from virtual pin number)
-const int channelPins[MAX_CHANNEL_NUM] = {201, 202, 203, 204};
+const int channelPins[MAX_CHANNEL_NUM] = {201, 202, 203, 204};  //* Example: 4 MCP4728 channels
 
 //* Virtual pin constants
 #define NATIVE_DAC_PIN_BASE 100   //* 100=DAC0, 101=DAC1
@@ -324,12 +324,13 @@ uint16_t clipToChannelRange(uint16_t value, int ch) {
     return value;
 }
 
-//* Parse and validate a value for a channel (NO SCALING - just clip and warn)
+//* Parse and validate a value for a channel
 //* Input formats:
 //*   0.0-1.0: Normalized - scale to channel's max
-//*   0-255: 8-bit - keep as-is (warn if used on 12-bit channel)
-//*   256-4095: 12-bit - clip if on 8-bit channel (with warning)
-//*   >4095: Clip to max (with warning)
+//*   Integer 0 or 1: Binary HIGH/LOW - 0 stays 0, 1 becomes max (255 or 4095)
+//*   Integer 2-255: 8-bit value - keep as-is
+//*   Integer 256-4095: 12-bit value - clip if on 8-bit channel
+//*   >4095: Clip to max
 uint16_t parseChannelValue(String valueStr, int ch, bool &hasError) {
     hasError = false;
     uint16_t maxVal = getChannelMaxValue(ch);
@@ -357,7 +358,17 @@ uint16_t parseChannelValue(String valueStr, int ch, bool &hasError) {
     //* Integer values
     int intValue = (int)value;
     
-    //* 8-bit range (0-255) - accept as-is for any channel
+    //* Special case: Integer 0 or 1 treated as binary HIGH/LOW
+    //* This ensures backward compatibility with protocols using 0,1 for OFF/ON
+    //* 0 = OFF (value 0), 1 = ON (full intensity = maxVal)
+    if (intValue == 0) {
+        return 0;
+    }
+    if (intValue == 1) {
+        return maxVal;  //* Full intensity: 255 for PWM, 4095 for DAC
+    }
+    
+    //* 8-bit range (2-255) - accept as-is for any channel
     if (intValue <= 255) {
         return (uint16_t)intValue;
     }
@@ -376,24 +387,32 @@ uint16_t parseChannelValue(String valueStr, int ch, bool &hasError) {
 }
 
 //* Convert float value to channel resolution (for RAMP parsing)
-//* Handles: 0.0-1.0 normalized, 0-255 8-bit, 0-4095 12-bit
+//* Handles: 0.0-1.0 normalized, integer 0/1 as binary, 2-255 8-bit, 256-4095 12-bit
 uint16_t convertToChannelResolution(float value, int ch) {
     uint16_t maxVal = getChannelMaxValue(ch);
     bool is12Bit = is12BitChannel(ch);
     
-    //* Normalized value (0.0-1.0) - scale to channel max
-    if (value >= 0.0f && value <= 1.0f) {
-        //* Check if it's actually a normalized value (has fractional part or is 0 or 1)
-        if (value == 0.0f || value == 1.0f || (value > 0.0f && value < 1.0f)) {
-            //* Only treat as normalized if <= 1.0
-            return (uint16_t)(value * maxVal);
-        }
+    //* Check for fractional part to determine if normalized
+    bool hasFractionalPart = (value > 0.0f && value < 1.0f) || 
+                              (value - (int)value != 0.0f);
+    
+    //* Normalized value (0.0-1.0 with decimal) - scale to channel max
+    if (hasFractionalPart && value >= 0.0f && value <= 1.0f) {
+        return (uint16_t)(value * maxVal);
     }
     
     //* Integer-like values
     int intValue = (int)value;
     
-    //* 8-bit range (0-255) - accept as-is for any channel
+    //* Special case: Integer 0 or 1 treated as binary HIGH/LOW
+    if (intValue == 0) {
+        return 0;
+    }
+    if (intValue == 1) {
+        return maxVal;  //* Full intensity: 255 for PWM, 4095 for DAC
+    }
+    
+    //* 8-bit range (2-255) - accept as-is for any channel
     if (intValue <= 255) {
         return (uint16_t)intValue;
     }

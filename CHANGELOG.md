@@ -2,6 +2,38 @@
 
 All notable changes to the Light Controller v2.3 project.
 
+## [2.3.3] - 2026-01-29
+
+### Binary Value Interpretation Fix
+Fixed issue where integer 0/1 STATUS values were interpreted as literal intensity values
+instead of binary HIGH/LOW (full intensity).
+
+**Problem**: `STATUS:1,0` was being interpreted as PWM value 1 (nearly off) instead of 
+full intensity (255 for PWM, 4095 for DAC).
+
+**Solution**: Integer 0 and 1 are now treated as binary HIGH/LOW:
+- `0` = OFF (value 0)
+- `1` = ON (full intensity: 255 for PWM, 4095 for DAC)
+- `2-255` = Actual PWM value (passed through)
+- `256-4095` = Actual DAC value (capped to 255 for PWM channels)
+- `0.0-1.0` (float) = Normalized value (scaled to channel max)
+
+### Arduino Firmware Changes
+- **`parseChannelValue()`**: Updated to treat integer 0/1 as binary HIGH/LOW
+- **`convertToChannelResolution()`**: Updated with same binary interpretation for RAMP parsing
+
+### Python Changes (viz_protocol_html.py)
+- **`convert_binary_to_intensity()`**: New helper function for consistent value interpretation
+- Fixed intensity chart generation to display correct values for binary 0/1
+- RAMP segment start/end values now correctly interpret binary 0/1
+
+### Backward Compatibility
+- Existing protocols using `STATUS:1,0` now work correctly (full intensity on/off)
+- Protocols using explicit values like `STATUS:255,0` continue to work unchanged
+- Float normalized values like `STATUS:0.5,0.0` continue to work as expected
+
+---
+
 ## [2.3.2] - 2026-01-24
 
 ### Virtual Pin System Restored
