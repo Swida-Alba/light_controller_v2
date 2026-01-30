@@ -26,12 +26,12 @@
 //*   {11, 100, 201, 202}    - 1 PWM + 1 Native DAC + 2 MCP4728
 //* ---------------------------------------------------------------------
 
-const int MAX_CHANNEL_NUM = 2;              //* Total number of channels
-const int MAX_PATTERN_NUM = 5;             //* Max patterns per channel
-const int PATTERN_LENGTH = 2;               //* Max steps per pattern
+const int MAX_CHANNEL_NUM = 4;              //* Total number of channels
+const int MAX_PATTERN_NUM = 10;             //* Max patterns per channel
+const int PATTERN_LENGTH = 4;               //* Max steps per pattern
 
 //* Channel pin assignments (type auto-detected from virtual pin number)
-const int channelPins[MAX_CHANNEL_NUM] = {11, 12};  //* Example: 4 MCP4728 channels
+const int channelPins[MAX_CHANNEL_NUM] = {201,202,203,204};  //* Example: 4 MCP4728 channels
 
 //* Virtual pin constants
 #define NATIVE_DAC_PIN_BASE 100   //* 100=DAC0, 101=DAC1
@@ -41,9 +41,9 @@ const int channelPins[MAX_CHANNEL_NUM] = {11, 12};  //* Example: 4 MCP4728 chann
 //* FEATURE ENABLE/DISABLE
 //* ---------------------------------------------------------------------
 
-#define PULSE_MODE_ENABLE 0     //* 1=Enable pulse modulation, 0=Disable
-#define PWM_RAMP_ENABLE 0       //* 1=Enable PWM/RAMP gradients, 0=Binary only
-#define MCP4728_ENABLE 0        //* 1=Enable MCP4728 I2C DAC, 0=Disable
+#define PULSE_MODE_ENABLE 1     //* 1=Enable pulse modulation, 0=Disable
+#define PWM_RAMP_ENABLE 1       //* 1=Enable PWM/RAMP gradients, 0=Binary only
+#define MCP4728_ENABLE 1        //* 1=Enable MCP4728 I2C DAC, 0=Disable
 #define CHANNEL_MONITOR_ENABLE 1 //* 1=Enable real-time channel monitoring, 0=Disable
 
 //* ---------------------------------------------------------------------
