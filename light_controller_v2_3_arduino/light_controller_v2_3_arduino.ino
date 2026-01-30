@@ -26,12 +26,12 @@
 //*   {11, 100, 201, 202}    - 1 PWM + 1 Native DAC + 2 MCP4728
 //* ---------------------------------------------------------------------
 
-const int MAX_CHANNEL_NUM = 4;              //* Total number of channels
-const int MAX_PATTERN_NUM = 10;             //* Max patterns per channel
-const int PATTERN_LENGTH = 4;               //* Max steps per pattern
+const int MAX_CHANNEL_NUM = 2;              //* Total number of channels
+const int MAX_PATTERN_NUM = 5;             //* Max patterns per channel
+const int PATTERN_LENGTH = 2;               //* Max steps per pattern
 
 //* Channel pin assignments (type auto-detected from virtual pin number)
-const int channelPins[MAX_CHANNEL_NUM] = {201, 202, 203, 204};  //* Example: 4 MCP4728 channels
+const int channelPins[MAX_CHANNEL_NUM] = {11, 12};  //* Example: 4 MCP4728 channels
 
 //* Virtual pin constants
 #define NATIVE_DAC_PIN_BASE 100   //* 100=DAC0, 101=DAC1
@@ -41,9 +41,9 @@ const int channelPins[MAX_CHANNEL_NUM] = {201, 202, 203, 204};  //* Example: 4 M
 //* FEATURE ENABLE/DISABLE
 //* ---------------------------------------------------------------------
 
-#define PULSE_MODE_ENABLE 1     //* 1=Enable pulse modulation, 0=Disable
-#define PWM_RAMP_ENABLE 1       //* 1=Enable PWM/RAMP gradients, 0=Binary only
-#define MCP4728_ENABLE 1        //* 1=Enable MCP4728 I2C DAC, 0=Disable
+#define PULSE_MODE_ENABLE 0     //* 1=Enable pulse modulation, 0=Disable
+#define PWM_RAMP_ENABLE 0       //* 1=Enable PWM/RAMP gradients, 0=Binary only
+#define MCP4728_ENABLE 0        //* 1=Enable MCP4728 I2C DAC, 0=Disable
 #define CHANNEL_MONITOR_ENABLE 1 //* 1=Enable real-time channel monitoring, 0=Disable
 
 //* ---------------------------------------------------------------------
@@ -211,10 +211,12 @@ bool pulseState[MAX_CHANNEL_NUM] = {false};
 unsigned long nextPulseTime[MAX_CHANNEL_NUM] = {0};
 #endif
 
+//* Track current output value for monitor (always needed regardless of PWM_RAMP_ENABLE)
+uint16_t currentOutputValue[MAX_CHANNEL_NUM] = {0};  //* Current output (0-4095 or 0-255)
+
 #if PWM_RAMP_ENABLE == 1
 unsigned long rampStartTime[MAX_CHANNEL_NUM] = {0};
 int rampCurrentSegment[MAX_CHANNEL_NUM] = {0};
-uint16_t currentOutputValue[MAX_CHANNEL_NUM] = {0};  //* Current output (0-4095 or 0-255)
 unsigned long lastRampUpdate[MAX_CHANNEL_NUM] = {0};
 #endif
 
@@ -443,9 +445,8 @@ void setChannelOutput(int ch, uint16_t value) {
     //* Clip value to channel's valid range
     value = clipToChannelRange(value, ch);
     
-#if PWM_RAMP_ENABLE == 1
+    //* Track current output value for monitor
     currentOutputValue[ch] = value;
-#endif
     
     switch (type) {
         case OUTPUT_TYPE_BINARY:
@@ -577,10 +578,12 @@ void setup() {
         
         channelPatterns[i].pattern_num = 0;
         
+        //* Initialize current output value tracking
+        currentOutputValue[i] = 0;
+        
 #if PWM_RAMP_ENABLE == 1
         rampStartTime[i] = 0;
         rampCurrentSegment[i] = 0;
-        currentOutputValue[i] = 0;
         lastRampUpdate[i] = 0;
 #endif
         
@@ -1620,12 +1623,8 @@ void printChannelValues() {
         Serial.print("CH");
         Serial.print(ch + 1);
         Serial.print(":");
-        
-#if PWM_RAMP_ENABLE == 1
+        //* Always use tracked currentOutputValue for accurate reporting
         Serial.print(currentOutputValue[ch]);
-#else
-        Serial.print(channelActive[ch] ? getChannelMaxValue(ch) : 0);
-#endif
     }
     Serial.println();
 }
