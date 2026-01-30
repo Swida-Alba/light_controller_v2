@@ -57,7 +57,7 @@ def is_12bit_channel(channel_type):
     return channel_type in (OUTPUT_TYPE_DAC, OUTPUT_TYPE_MCP4728)
 
 
-def convert_status_to_channel_value(value, channel_type='P', channel_num=None, warnings=None):
+def convert_status_to_channel_value(value, channel_type='P', channel_num=None, warnings=None, pwm_ramp_enabled=True):
     """
     Convert a status value for a channel type with strict validation (NO SCALING).
     
@@ -74,6 +74,7 @@ def convert_status_to_channel_value(value, channel_type='P', channel_num=None, w
         channel_type: 'P' (PWM/8-bit), 'D' (DAC/12-bit), 'M' (MCP4728/12-bit), 'B' (Binary)
         channel_num: Optional channel number for error messages
         warnings: Optional list to collect warning messages
+        pwm_ramp_enabled: If False, PWM channels are treated as binary (0/1)
         
     Returns:
         int: Value (possibly capped), or 'ramp' string
@@ -81,6 +82,9 @@ def convert_status_to_channel_value(value, channel_type='P', channel_num=None, w
     Raises:
         ValueError: If value is invalid (decimal on binary, non-normalized decimal, etc.)
     """
+    # When PWM_RAMP_ENABLE=0, PWM channels behave as binary
+    if channel_type == OUTPUT_TYPE_PWM and not pwm_ramp_enabled:
+        channel_type = OUTPUT_TYPE_BINARY
     max_val = get_max_value_for_type(channel_type)
     ch_str = f"CH{channel_num}" if channel_num else "channel"
     is_12bit = is_12bit_channel(channel_type)
@@ -3180,7 +3184,9 @@ def GeneratePatternCommands(compressed_patterns, pwm_mode=True):
                 commands.append(cmd_t)
     return commands
 
-def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse=None, pwm_mode=True):
+def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse=None, 
+                         pwm_mode=True, channel_types=None, channel_max_values=None,
+                         pwm_ramp_enabled=True):
     '''
     Generate string commands for waiting for each channel to start.
     Now uses pattern_length=1 format (single state) instead of dummy second state.
@@ -3193,6 +3199,11 @@ def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse
                     Format: {channel_name: {'period': int, 'pw': int}}
                     Example: {'CH1': {'period': 2000, 'pw': 100}}
         pwm_mode: If True, convert status to PWM (0-255). If False, use binary (0/1).
+                  DEPRECATED: Use channel_types for proper channel-specific conversion.
+        channel_types: String of channel types from Arduino (e.g., "PPMM" or "MMPP")
+                       P=PWM(0-255), D=DAC(0-4095), M=MCP4728(0-4095), B=Binary(0/1)
+        channel_max_values: List of max values per channel from Arduino (e.g., [255, 255, 4095, 4095])
+        pwm_ramp_enabled: If False, PWM channels are treated as binary (0/1)
         
     Returns:
         List of string commands, one for each channel
@@ -3201,19 +3212,35 @@ def GenerateWaitCommands(wait_status, remaining_time, valid_channels, wait_pulse
     commands = []
     for channel_name in valid_channels:
         channel_num = int(channel_name.replace('CH', ''))
-        status = wait_status[channel_name]
+        status = wait_status.get(channel_name)
         if status is None:
             continue
         
-        # Convert status to PWM if enabled
-        if pwm_mode:
-            pwm_status = convert_status_to_pwm(status)
+        # Determine channel type and max value
+        ch_idx = channel_num - 1  # 0-based index
+        if channel_types and ch_idx < len(channel_types):
+            ch_type = channel_types[ch_idx]
         else:
-            pwm_status = int(status)
+            ch_type = OUTPUT_TYPE_PWM  # Default to PWM
+        
+        if channel_max_values and ch_idx < len(channel_max_values):
+            max_val = channel_max_values[ch_idx]
+        else:
+            max_val = get_max_value_for_type(ch_type)
+        
+        # Convert status using channel-aware conversion
+        # This handles: 0/1 binary, 0.0-1.0 normalized, 0-255, 0-4095
+        # When pwm_ramp_enabled=False, PWM channels are treated as binary
+        converted_status = convert_status_to_channel_value(
+            status, 
+            channel_type=ch_type, 
+            channel_num=channel_num,
+            pwm_ramp_enabled=pwm_ramp_enabled
+        )
         
         # Build command with pattern_length=1 (single state)
         cmd_t = \
-            f"PATTERN:0;CH:{channel_num};STATUS:{pwm_status};" \
+            f"PATTERN:0;CH:{channel_num};STATUS:{converted_status};" \
             f"TIME_MS:{remaining_time[channel_name]};REPEATS:1"
         
         # Add PULSE parameter if provided for this channel

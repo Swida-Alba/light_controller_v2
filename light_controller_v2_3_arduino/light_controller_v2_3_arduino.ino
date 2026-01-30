@@ -445,23 +445,28 @@ void setChannelOutput(int ch, uint16_t value) {
     //* Clip value to channel's valid range
     value = clipToChannelRange(value, ch);
     
-    //* Track current output value for monitor
-    currentOutputValue[ch] = value;
-    
     switch (type) {
         case OUTPUT_TYPE_BINARY:
             digitalWrite(pin, value > 0 ? HIGH : LOW);
+            //* Track binary output value (0 or 1)
+            currentOutputValue[ch] = (value > 0) ? 1 : 0;
             break;
             
         case OUTPUT_TYPE_PWM:
 #if PWM_RAMP_ENABLE == 1
             if (PWM_RAMP_ENABLED) {
                 analogWrite(pin, value);
+                //* Track actual PWM value
+                currentOutputValue[ch] = value;
             } else {
                 digitalWrite(pin, value > 127 ? HIGH : LOW);
+                //* Track binary output value when PWM_RAMP disabled
+                currentOutputValue[ch] = (value > 127) ? 1 : 0;
             }
 #else
             digitalWrite(pin, value > 127 ? HIGH : LOW);
+            //* Track binary output value when PWM_RAMP disabled
+            currentOutputValue[ch] = (value > 127) ? 1 : 0;
 #endif
             break;
             
@@ -474,6 +479,8 @@ void setChannelOutput(int ch, uint16_t value) {
                 }
             }
 #endif
+            //* Track DAC output value
+            currentOutputValue[ch] = value;
             break;
             
         case OUTPUT_TYPE_MCP4728:
@@ -493,6 +500,8 @@ void setChannelOutput(int ch, uint16_t value) {
                 }
             }
 #endif
+            //* Track MCP4728 output value
+            currentOutputValue[ch] = value;
             break;
     }
 }

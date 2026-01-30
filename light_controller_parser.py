@@ -926,6 +926,7 @@ class LightControllerParser:
     def generate_wait_commands(self):
         """
         Generate wait commands based on start time and wait status.
+        Uses channel types from Arduino configuration for proper value conversion.
         
         Returns:
             list: Generated wait commands
@@ -934,10 +935,22 @@ class LightControllerParser:
         time_countdown = CountDown(self.start_time)
         remaining_time_corrected = CorrectTime(time_countdown, self.calib_factor)
         
-        # Generate wait commands with optional pulse support
+        # Get channel types and max values from Arduino config
+        channel_types = self.arduino_config.get('channel_types', '')
+        channel_max_values = self.arduino_config.get('channel_max_values', [])
+        pwm_ramp_enabled = self.arduino_config.get('pwm_ramp_mode', True)
+        
+        # Generate wait commands with optional pulse support and channel-aware conversion
         wait_pulse_param = self.wait_pulse if self.wait_pulse else None
-        self.cmd_wait = GenerateWaitCommands(self.wait_status, remaining_time_corrected, 
-                                            self.valid_channels, wait_pulse_param)
+        self.cmd_wait = GenerateWaitCommands(
+            self.wait_status, 
+            remaining_time_corrected, 
+            self.valid_channels, 
+            wait_pulse_param,
+            channel_types=channel_types,
+            channel_max_values=channel_max_values,
+            pwm_ramp_enabled=pwm_ramp_enabled
+        )
         
         return self.cmd_wait
     

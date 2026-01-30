@@ -337,13 +337,25 @@ if __name__ == '__main__':
                             print('   (5-minute display window, data saved on close)')
                             print('   Close window or press Ctrl+C to stop\n')
                             
+                            # Get channel configuration from Arduino
+                            channel_types = parser.arduino_config.get('channel_types', '')
+                            channel_max_values = parser.arduino_config.get('channel_max_values', [])
+                            pwm_ramp_enabled = parser.arduino_config.get('pwm_ramp_mode', True)
+                            
+                            # Determine number of channels to monitor
+                            # Prioritize Arduino config (physical channels), fallback to protocol usage, then default to 4
+                            monitor_channels = len(channel_types) if channel_types else (len(parser.valid_channels) or 4)
+                            
                             # run_realtime_plot is blocking - it shows the matplotlib window
                             result = run_realtime_plot(
                                 serial_port=parser.ser,
                                 csv_output=monitor_csv,
                                 html_output=monitor_html,
-                                num_channels=len(parser.valid_channels) or 4,  # Use actual channel count from protocol
-                                loop_info=loop_info
+                                num_channels=monitor_channels,
+                                loop_info=loop_info,
+                                channel_types=channel_types,
+                                channel_max_values=channel_max_values,
+                                pwm_ramp_enabled=pwm_ramp_enabled
                             )
                             
                             if result:

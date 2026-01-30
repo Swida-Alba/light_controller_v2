@@ -48,6 +48,37 @@ VALUE_RANGE_BINARY = (0, 1)      # Binary: 0 or 1
 VALUE_RANGE_PWM = (0, 255)       # PWM: 8-bit
 VALUE_RANGE_DAC = (0, 4095)      # DAC: 12-bit
 
+# Channel type constants (matching Arduino)
+OUTPUT_TYPE_PWM = 'P'       # 8-bit (0-255)
+OUTPUT_TYPE_DAC = 'D'       # 12-bit native DAC (0-4095)
+OUTPUT_TYPE_MCP4728 = 'M'   # 12-bit MCP4728 DAC (0-4095)
+OUTPUT_TYPE_BINARY = 'B'    # Binary (0 or 1)
+
+
+def get_channel_range_from_type(channel_type: str, pwm_ramp_enabled: bool = True):
+    """
+    Get the value range for a channel type.
+    
+    Args:
+        channel_type: 'P' (PWM), 'D' (DAC), 'M' (MCP4728), 'B' (Binary)
+        pwm_ramp_enabled: If False, PWM channels behave as binary (0/1)
+        
+    Returns:
+        (min_val, max_val, label) tuple
+    """
+    if channel_type == OUTPUT_TYPE_BINARY:
+        return (0, 1, 'Binary (0-1)')
+    elif channel_type == OUTPUT_TYPE_PWM:
+        if pwm_ramp_enabled:
+            return (0, 255, 'PWM (0-255)')
+        else:
+            return (0, 1, 'Digital (0-1)')
+    elif channel_type in (OUTPUT_TYPE_DAC, OUTPUT_TYPE_MCP4728):
+        return (0, 4095, 'DAC (0-4095)')
+    else:
+        return (0, 255, 'Unknown (0-255)')
+
+
 def detect_value_range(values):
     """
     Detect the value range type from observed values.
@@ -113,9 +144,11 @@ class SerialMonitor:
     - DAC: 0-4095 (12-bit, e.g., MCP4728)
     
     Y-axis automatically adjusts to fit actual data values.
+    Can use channel types from Arduino configuration for proper scaling.
     """
     
-    def __init__(self, port=None, baud=9600, max_points=300, output_file=None):
+    def __init__(self, port=None, baud=9600, max_points=300, output_file=None, 
+                 channel_types=None, pwm_ramp_enabled=True):
         """
         Initialize serial monitor
         
@@ -124,6 +157,8 @@ class SerialMonitor:
             baud: Baud rate (default 9600)
             max_points: Maximum points to keep in memory (for performance)
             output_file: Optional CSV file to log data
+            channel_types: Optional string of channel types from Arduino (e.g., "PPMM")
+            pwm_ramp_enabled: If False, PWM channels display as binary (0/1)
         """
         self.port = port
         self.baud = baud
@@ -131,6 +166,10 @@ class SerialMonitor:
         self.max_points = max_points
         self.output_file = output_file
         self.running = False
+        
+        # Channel configuration from Arduino
+        self.channel_types = channel_types or ""
+        self.pwm_ramp_enabled = pwm_ramp_enabled
         
         # Data storage: {channel_num: {'times': [], 'values': []}}
         self.channel_data = {}
@@ -144,11 +183,31 @@ class SerialMonitor:
         self.data_points_lost = 0
         self.last_print_time = 0
         
+        # Track max channel number seen
+        self.max_channel_num = 0
+        
         # Output file
         self.csv_file = None
+        self.csv_header_written = False
         if output_file:
             self.csv_file = open(output_file, 'w')
-            self.csv_file.write("timestamp,time_ms,CH1,CH2,CH3,CH4\n")
+            # Header will be written dynamically when we know channel count
+    
+    def get_channel_range(self, ch_num: int):
+        """Get the value range for a channel based on its type."""
+        ch_idx = ch_num - 1  # Convert to 0-based index
+        if self.channel_types and ch_idx < len(self.channel_types):
+            ch_type = self.channel_types[ch_idx]
+            return get_channel_range_from_type(ch_type, self.pwm_ramp_enabled)
+        else:
+            # Fall back to auto-detection based on observed values
+            range_type = self.channel_ranges.get(ch_num, 'pwm')
+            if range_type == 'dac':
+                return (0, 4095, 'DAC (0-4095)')
+            elif range_type == 'binary':
+                return (0, 1, 'Binary (0-1)')
+            else:
+                return (0, 255, 'PWM (0-255)')
     
     def find_serial_port(self):
         """Auto-detect Arduino serial port"""
@@ -239,17 +298,28 @@ class SerialMonitor:
         
         self.data_points_received += 1
         
+        # Update max channel number seen
+        if channels:
+            self.max_channel_num = max(self.max_channel_num, max(channels.keys()))
+        
         # Log to CSV if enabled
         if self.csv_file:
+            # Write header on first data point (now we know channel count)
+            if not self.csv_header_written:
+                headers = ['timestamp', 'time_ms'] + [f'CH{i}' for i in range(1, self.max_channel_num + 1)]
+                self.csv_file.write(','.join(headers) + '\n')
+                self.csv_header_written = True
+            
             timestamp = datetime.now().isoformat()
-            values = [channels.get(i, 0) for i in range(1, 5)]
+            values = [channels.get(i, 0) for i in range(1, self.max_channel_num + 1)]
             self.csv_file.write(f"{timestamp},{elapsed_ms:.0f},{','.join(map(str, values))}\n")
             self.csv_file.flush()
     
     def print_values(self, channels):
         """Print current channel values to console with adaptive bar display.
         
-        Automatically detects value range (binary/PWM/DAC) and scales bar accordingly.
+        Uses channel type configuration if available, otherwise auto-detects
+        value range (binary/PWM/DAC) and scales bar accordingly.
         """
         current_time = time.time()
         if current_time - self.last_print_time < 0.5:  # Print max 2x per second
@@ -257,37 +327,47 @@ class SerialMonitor:
         
         elapsed_s = current_time - self.start_time
         
+        # Determine how many channels to display
+        num_channels = max(channels.keys()) if channels else 4
+        num_channels = min(num_channels, 8)  # Cap at 8
+        
         status = f"⏱️  {elapsed_s:6.1f}s | "
-        for ch in range(1, 5):
+        for ch in range(1, num_channels + 1):
             value = channels.get(ch, 0)
             
-            # Detect and track range type for this channel
-            if ch not in self.channel_ranges:
-                if value > 255:
-                    self.channel_ranges[ch] = 'dac'
-                elif value > 1:
-                    self.channel_ranges[ch] = 'pwm'
-                else:
-                    self.channel_ranges[ch] = 'binary'
-            elif value > 255 and self.channel_ranges[ch] != 'dac':
-                self.channel_ranges[ch] = 'dac'
-            elif value > 1 and self.channel_ranges[ch] == 'binary':
-                self.channel_ranges[ch] = 'pwm'
+            # Get range from channel type configuration, or auto-detect
+            min_val, max_val, label = self.get_channel_range(ch)
             
-            # Calculate bar based on detected range
-            range_type = self.channel_ranges.get(ch, 'pwm')
-            if range_type == 'dac':
-                max_val = 4095
+            # Auto-detect if no channel type config and value exceeds current range
+            if not self.channel_types:
+                if value > 255 and self.channel_ranges.get(ch) != 'dac':
+                    self.channel_ranges[ch] = 'dac'
+                elif value > 1 and self.channel_ranges.get(ch) == 'binary':
+                    self.channel_ranges[ch] = 'pwm'
+                elif ch not in self.channel_ranges:
+                    if value > 255:
+                        self.channel_ranges[ch] = 'dac'
+                    elif value > 1:
+                        self.channel_ranges[ch] = 'pwm'
+                    else:
+                        self.channel_ranges[ch] = 'binary'
+                # Re-get range after auto-detection
+                min_val, max_val, label = self.get_channel_range(ch)
+            
+            # Calculate bar
+            if max_val > 0:
                 bar_length = int((value / max_val) * 10)
-                value_str = f"{value:4d}"
-            elif range_type == 'binary':
-                max_val = 1
+            else:
                 bar_length = 10 if value else 0
+            bar_length = min(bar_length, 10)  # Cap at 10
+            
+            # Format value string based on max range
+            if max_val == 1:
                 value_str = f"{value:1d}   "
-            else:  # pwm
-                max_val = 255
-                bar_length = int((value / max_val) * 10)
+            elif max_val == 255:
                 value_str = f"{value:3d} "
+            else:
+                value_str = f"{value:4d}"
             
             bar = '█' * bar_length + '░' * (10 - bar_length)
             status += f"CH{ch}: {value_str}[{bar}] | "
@@ -416,21 +496,34 @@ class SerialMonitor:
                             for ch, d in self.channel_data.items()}
                 points = self.data_points_received
             
-            num_channels = len(data_copy) if data_copy else 4
+            # Get sorted list of channel numbers from actual data
+            if data_copy:
+                channel_nums = sorted(data_copy.keys())
+                num_channels = len(channel_nums)
+            else:
+                channel_nums = list(range(1, 5))  # Default: CH1-CH4
+                num_channels = 4
+            
             fig = make_subplots(
                 rows=num_channels, cols=1,
-                subplot_titles=[f"Channel {i+1}" for i in range(num_channels)],
+                subplot_titles=[f"Channel {ch}" for ch in channel_nums],
                 shared_xaxes=True,
-                vertical_spacing=0.08
+                vertical_spacing=0.05 if num_channels > 4 else 0.08
             )
             
-            colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe']
+            # Extended color palette for up to 16 channels
+            colors = [
+                '#667eea', '#764ba2', '#f093fb', '#4facfe',  # Original 4
+                '#ff6b6b', '#feca57', '#48dbfb', '#1dd1a1',  # 4 more
+                '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3',  # 4 more
+                '#ff9f43', '#ee5253', '#10ac84', '#01a3a4',  # 4 more
+            ]
             
             # Calculate dynamic X-axis range (show sliding window of time)
             x_max = 0
             x_min = 0
             if data_copy:
-                for idx, ch in enumerate(sorted(data_copy.keys()), 1):
+                for idx, ch in enumerate(channel_nums, 1):
                     d = data_copy[ch]
                     # Limit points for performance
                     times = d['times'][-self.max_live_points:]
@@ -469,9 +562,9 @@ class SerialMonitor:
                 x_padding = max(5, (x_max - x_min) * 0.02)  # At least 5s or 2% padding
                 fig.update_xaxes(range=[x_min - x_padding, x_max + x_padding])
             else:
-                # No data yet - show empty placeholder with default PWM range
-                for idx in range(1, 5):
-                    fig.add_trace(go.Scatter(x=[], y=[], name=f'Ch {idx}'), row=idx, col=1)
+                # No data yet - show empty placeholder
+                for idx, ch in enumerate(channel_nums, 1):
+                    fig.add_trace(go.Scatter(x=[], y=[], name=f'Ch {ch}'), row=idx, col=1)
                     fig.update_yaxes(range=[0, 260], title_text="Value (0-255)", row=idx, col=1)
                 fig.update_xaxes(range=[0, 60])  # Default 60s window when no data
             
@@ -544,17 +637,26 @@ class SerialMonitor:
             return
         
         # Create subplots
-        num_channels = len(self.channel_data)
+        channel_nums = sorted(self.channel_data.keys())
+        num_channels = len(channel_nums)
         fig = make_subplots(
             rows=num_channels, cols=1,
-            subplot_titles=[f"Channel {ch}" for ch in sorted(self.channel_data.keys())],
-            shared_xaxes=True
+            subplot_titles=[f"Channel {ch}" for ch in channel_nums],
+            shared_xaxes=True,
+            vertical_spacing=0.05 if num_channels > 4 else 0.08
         )
         
-        colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe']
+        # Extended color palette for up to 16 channels
+        colors = [
+            '#667eea', '#764ba2', '#f093fb', '#4facfe',  # Original 4
+            '#ff6b6b', '#feca57', '#48dbfb', '#1dd1a1',  # 4 more
+            '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3',  # 4 more
+            '#ff9f43', '#ee5253', '#10ac84', '#01a3a4',  # 4 more
+        ]
         
-        for idx, ch in enumerate(sorted(self.channel_data.keys()), 1):
+        for idx, ch in enumerate(channel_nums, 1):
             data = self.channel_data[ch]
+            color = colors[(ch-1) % len(colors)]
             
             fig.add_trace(
                 go.Scatter(
@@ -563,19 +665,27 @@ class SerialMonitor:
                     name=f'Channel {ch}',
                     mode='lines',
                     fill='tozeroy',
-                    fillcolor=f'rgba({colors[ch-1]}, 0.3)',
-                    line=dict(color=colors[ch-1], width=2)
+                    line=dict(color=color, width=2)
                 ),
+                row=idx, col=1
+            )
+            
+            # Dynamic Y-axis based on actual data values
+            y_min, y_max = calculate_dynamic_ylim(data['values'])
+            _, _, range_type = detect_value_range(data['values'])
+            range_labels = {'binary': '0-1', 'pwm': '0-255', 'dac': '0-4095'}
+            fig.update_yaxes(
+                range=[y_min, y_max],
+                title_text=f"Value ({range_labels.get(range_type, '0-255')})",
                 row=idx, col=1
             )
         
         # Update layout
-        fig.update_yaxes(range=[0, 260], title_text="PWM Value")
-        fig.update_xaxes(title_text="Time (seconds)")
+        fig.update_xaxes(title_text="Time (seconds)", row=num_channels, col=1)
         
         fig.update_layout(
             title="Light Controller - Real-time Channel Monitor",
-            height=300 * num_channels,
+            height=250 * num_channels,
             hovermode='x unified',
             showlegend=False
         )
